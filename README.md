@@ -53,6 +53,38 @@ npm run dev       # reference editor at http://localhost:5173
 The editor works with no assets — add a colour card and a title to exercise the
 timeline, or import your own footage. Nothing is uploaded; there is no backend.
 
+## Android APK
+
+The reference editor is packaged as an Android app (Capacitor shell around the
+WebView, assets bundled into the APK so it runs with no network at all).
+
+**To download a built APK:** open the repository's **Actions** tab → the most
+recent **Build Android APK** run → the `apexedit-apk` artifact. Unzip it and
+sideload the `.apk`, allowing installation from unknown sources.
+
+**To build it yourself**, with the Android SDK installed:
+
+```bash
+npm ci
+npm run build --workspace @apex/prototype
+cd apps/prototype
+npx cap sync android
+cd android && ./gradlew assembleDebug
+# → app/build/outputs/apk/debug/app-debug.apk
+```
+
+Notes on this build:
+
+- **Debug-signed**, so it sideloads but is not Play-Store-ready. Release signing
+  needs a keystore that should not live in a repository.
+- **minSdk 24** (Android 7). The PRD targets Android 12+ for the shipping native
+  app; this shell only needs a WebView new enough for WebGL2, MediaRecorder and
+  `canvas.captureStream`.
+- It is the **reference editor**, not the shipping product. The native media
+  layer described in ADR 0001 — AVFoundation/Metal and MediaCodec/Vulkan — is
+  what replaces the WebView path for real 4K performance. This APK is for
+  trying the UX and confirming the engine behaves on-device.
+
 ## The design decisions worth knowing
 
 **Time is an integer.** Every position and duration is a count of ticks at
