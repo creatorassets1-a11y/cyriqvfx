@@ -53,6 +53,32 @@ npm run dev       # reference editor at http://localhost:5173
 The editor works with no assets — add a colour card and a title to exercise the
 timeline, or import your own footage. Nothing is uploaded; there is no backend.
 
+## Install it as an app
+
+The editor is a full PWA — manifest, service worker, launcher icons — so once
+it is served over HTTPS it installs from the browser as a real app: home-screen
+icon, fullscreen, and fully offline (verified with the network disabled).
+
+The built site is published to the **`gh-pages`** branch. To serve it:
+
+**Settings → Pages → Source: "Deploy from a branch" → `gh-pages` / (root)**
+
+Then open the URL on your phone in Chrome → **⋮ → Install app**.
+
+Any static host works equally well if Pages is unavailable — drop
+`apps/prototype/dist/` on Netlify Drop, Cloudflare Pages, or similar.
+
+### Turning that into an APK without this repo's CI
+
+Once the PWA is hosted at a public HTTPS URL, [PWABuilder](https://www.pwabuilder.com)
+will generate a **signed Android APK** from it: paste the URL, choose Android,
+download the package. That produces a Trusted Web Activity wrapper — a real
+installable APK — without needing the Android SDK or any CI.
+
+The Capacitor build below is still the better artefact when you can run it: it
+bundles the assets into the APK rather than relying on the service worker
+cache, so it is offline from the very first launch.
+
 ## Single-file build
 
 ```bash
