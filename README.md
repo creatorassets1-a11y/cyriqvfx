@@ -53,6 +53,18 @@ npm run dev       # reference editor at http://localhost:5173
 The editor works with no assets — add a colour card and a title to exercise the
 timeline, or import your own footage. Nothing is uploaded; there is no backend.
 
+## Single-file build
+
+```bash
+npm run build:standalone --workspace @apex/prototype
+# → apps/prototype/dist-standalone/apexedit.html
+```
+
+One self-contained HTML file with the JS and CSS inlined. It has no network
+dependencies at all — no fonts, no CDN, no backend — so it runs from `file://`
+by double-clicking it, including on a phone via the Files app. Verified against
+a browser with every non-`file://` request blocked.
+
 ## Android APK
 
 The reference editor is packaged as an Android app (Capacitor shell around the
@@ -61,6 +73,12 @@ WebView, assets bundled into the APK so it runs with no network at all).
 **To download a built APK:** open the repository's **Actions** tab → the most
 recent **Build Android APK** run → the `apexedit-apk` artifact. Unzip it and
 sideload the `.apk`, allowing installation from unknown sources.
+
+> The workflow requires GitHub Actions to be enabled on the account. As of the
+> last run it is not — Actions reported *"the job was not started because your
+> account is locked due to a billing issue"* — so no artifact exists yet.
+> Resolving the billing issue and re-running the workflow produces the APK with
+> no code changes needed.
 
 **To build it yourself**, with the Android SDK installed:
 
