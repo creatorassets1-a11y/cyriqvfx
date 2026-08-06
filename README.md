@@ -35,8 +35,12 @@ native renderers — not a shipping product.
 strategy, the AI provider and cost model, user flows, the UI specification.
 
 **Not started.** The iOS and Android shells, the Rust port of the engine, the
-backend, and every server-side AI capability. See
-[`docs/01-mvp-scope.md`](docs/01-mvp-scope.md) for what ships when and why.
+backend, and every server-side AI capability.
+
+**Nothing in the PRD has been dropped.** All 154 features are tracked
+individually in [`docs/05-feature-coverage.md`](docs/05-feature-coverage.md)
+with their current status and target release; 85 of them are in the first
+release. [`docs/01-mvp-scope.md`](docs/01-mvp-scope.md) explains the ordering.
 
 A full native NLE on two platforms is a multi-team, multi-quarter build. What
 this repository does is remove the hardest source of risk from that build: the
@@ -160,7 +164,8 @@ gesture must never break a session.
 | | |
 |---|---|
 | [`docs/PRD.md`](docs/PRD.md) | The source requirements |
-| [`docs/01-mvp-scope.md`](docs/01-mvp-scope.md) | What ships at launch, what was cut, and why |
+| [`docs/01-mvp-scope.md`](docs/01-mvp-scope.md) | Release sequencing — what ships when, and why in that order |
+| [`docs/05-feature-coverage.md`](docs/05-feature-coverage.md) | **Every PRD feature tracked individually** — status and release for all 154 |
 | [`docs/02-architecture.md`](docs/02-architecture.md) | Layers, invariants, module map, render contract |
 | [`docs/03-user-flows.md`](docs/03-user-flows.md) | Flows with their decision points and failure paths |
 | [`docs/04-ui-spec.md`](docs/04-ui-spec.md) | Accent colour, tokens, layout, gestures, accessibility |
