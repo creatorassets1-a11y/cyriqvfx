@@ -69,8 +69,27 @@ The built site is published to the **`gh-pages`** branch. To serve it:
 
 Then open the URL on your phone in Chrome → **⋮ → Install app**.
 
-Any static host works equally well if Pages is unavailable — drop
-`apps/prototype/dist/` on Netlify Drop, Cloudflare Pages, or similar.
+### Vercel
+
+`vercel.json` at the repo root configures the whole thing — build command,
+output directory, and the headers a PWA needs (the service worker and manifest
+must not be cached, or an installed app never picks up an update; hashed assets
+are cached for a year).
+
+```bash
+npm i -g vercel
+vercel          # preview deployment
+vercel --prod   # production
+```
+
+Or import the repo at [vercel.com/new](https://vercel.com/new) — the config is
+picked up automatically, with no settings to fill in.
+
+Vercel serves from a domain root, which also sidesteps the manifest-scope
+issues that a project subpath introduces.
+
+Any other static host works too — drop `apps/prototype/dist/` on Netlify Drop
+or Cloudflare Pages.
 
 ### Turning that into an APK without this repo's CI
 
