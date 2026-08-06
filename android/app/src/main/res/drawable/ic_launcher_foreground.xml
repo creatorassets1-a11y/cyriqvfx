@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Play glyph on the adaptive-icon canvas. Drawn inside the middle 66% so the
+    launcher's mask - circle, squircle or squircle-with-corners depending on the
+    device - cannot clip it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#22E3C3"
+        android:pathData="M42,34 L42,74 L76,54 Z" />
+</vector>

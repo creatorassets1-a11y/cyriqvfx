@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="apex_base">#FF07090D</color>
+    <color name="apex_accent">#FF22E3C3</color>
+    <color name="apex_icon_background">#FF0F1319</color>
+</resources>
