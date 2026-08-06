@@ -1,0 +1,55 @@
+{
+  "name": "ApexEdit — Video Editor",
+  "short_name": "ApexEdit",
+  "description": "Professional, offline-first mobile video editing. Multi-track timeline, frame-accurate trimming, colour grading and export — all on your device.",
+  "id": "/apexedit/",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#07090d",
+  "theme_color": "#0a0c10",
+  "categories": ["video", "photo", "productivity"],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "share_target": {
+    "action": "./",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "media",
+          "accept": ["video/*", "image/*", "audio/*"]
+        }
+      ]
+    }
+  },
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "application/json": [".apex.json"]
+      }
+    }
+  ]
+}

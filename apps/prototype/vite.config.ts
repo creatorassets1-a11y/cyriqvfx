@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
+  // Relative, so the same build works from a domain root, from a GitHub Pages
+  // project subpath, and from file:// in the standalone build.
+  base: './',
   plugins: [react()],
   resolve: {
     alias: {
