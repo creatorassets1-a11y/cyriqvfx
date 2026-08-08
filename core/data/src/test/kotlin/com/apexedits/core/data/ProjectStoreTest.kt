@@ -242,4 +242,57 @@ class ProjectStoreTest {
         assertEquals("Holiday cut", database.projectDao().byId(project.id)!!.name)
         assertEquals("Holiday cut", store.load(project.id)!!.project.name)
     }
+
+    // --- the Settings storage screen ------------------------------------------
+
+    @Test
+    fun `the storage breakdown separates footage from generated caches`() = runTest {
+        val project = sampleProject()
+        store.create(project)
+        File(store.mediaDir(project.id), "clip.mp4").writeBytes(ByteArray(5_000))
+        File(store.proxyDir(project.id), "proxy.mp4").writeBytes(ByteArray(1_000))
+        File(store.thumbnailDir(project.id), "thumb.jpg").writeBytes(ByteArray(200))
+
+        val breakdown = store.storageBreakdown()
+
+        // The point of a breakdown rather than one total: the user needs to see
+        // whether space is going to their footage or to caches before deciding
+        // what, if anything, to clear.
+        assertTrue(breakdown.mediaBytes >= 5_000)
+        assertTrue(breakdown.proxyBytes >= 1_000)
+        assertTrue(breakdown.thumbnailBytes >= 200)
+        assertTrue(breakdown.documentsBytes > 0)
+        assertEquals(
+            breakdown.documentsBytes + breakdown.mediaBytes + breakdown.proxyBytes + breakdown.thumbnailBytes,
+            breakdown.totalBytes,
+        )
+    }
+
+    @Test
+    fun `clearing all caches empties every project's caches but keeps documents and media`() = runTest {
+        val first = sampleProject()
+        // A distinct id source seeded away from zero: sampleProject() always
+        // starts counting from zero, so a second default-seeded project here
+        // would collide on the same id and overwrite the first in the index.
+        val second = SampleVideo.project(CountingIdSource(1_000), name = "Second")
+        store.create(first)
+        store.create(second)
+        File(store.proxyDir(first.id), "a.mp4").writeBytes(ByteArray(100))
+        File(store.proxyDir(second.id), "b.mp4").writeBytes(ByteArray(100))
+        File(store.mediaDir(first.id), "kept.mp4").writeBytes(ByteArray(100))
+
+        store.clearAllCaches()
+
+        assertEquals(0, store.proxyDir(first.id).listFiles()!!.size)
+        assertEquals(0, store.proxyDir(second.id).listFiles()!!.size)
+        // Footage and the document itself are never touched by a cache clear.
+        assertTrue(File(store.mediaDir(first.id), "kept.mp4").exists())
+        assertTrue(store.documentFile(first.id).isFile)
+    }
+
+    @Test
+    fun `storage breakdown on an empty library is all zero`() = runTest {
+        val breakdown = store.storageBreakdown()
+        assertEquals(0L, breakdown.totalBytes)
+    }
 }

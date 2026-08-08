@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -76,6 +80,20 @@ fun EditorScreen(
         if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
         viewModel.importMedia(result.data.extractUris(), atPlayhead = false)
     }
+
+    // Which missing media the relink dialog's "Locate File" button is currently
+    // working on. A single launcher is reused for every row, since Compose's
+    // activity-result contract is meant to be remembered once per screen rather
+    // than once per list item.
+    var relinkTargetId by remember { mutableStateOf<String?>(null) }
+    val relinkLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        val targetId = relinkTargetId
+        relinkTargetId = null
+        if (uri != null && targetId != null) viewModel.relinkMedia(targetId, uri)
+    }
+    var showRelinkDialog by remember { mutableStateOf(false) }
 
     ApexScaffold(tag = "EditorScreen", modifier = modifier) { width, height ->
         when {
@@ -186,7 +204,32 @@ fun EditorScreen(
             AlertDialog(
                 onDismissRequest = viewModel::dismissWarning,
                 title = { Text(warning.title) },
-                text = { Text("${warning.body}\n\n${warning.recommendation}") },
+                text = {
+                    Column {
+                        Text("${warning.body}\n\n${warning.recommendation}")
+                        Row(
+                            modifier = Modifier
+                                .padding(top = 12.dp)
+                                .clickable {
+                                    viewModel.setSuppressWarningChecked(!state.suppressWarningChecked)
+                                },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.Checkbox(
+                                checked = state.suppressWarningChecked,
+                                onCheckedChange = viewModel::setSuppressWarningChecked,
+                            )
+                            Text(
+                                text = warning.suppressButton,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.semantics {
+                                    contentDescription = "${warning.suppressButton}. When checked, " +
+                                        "this specific warning will not appear again on this device."
+                                },
+                            )
+                        }
+                    }
+                },
                 confirmButton = {
                     TextButton(onClick = viewModel::useSaferSettings) { Text(warning.saferButton) }
                 },
@@ -199,7 +242,24 @@ fun EditorScreen(
         }
 
         if (state.missingMediaCount > 0) {
-            MissingMediaBanner(count = state.missingMediaCount)
+            MissingMediaBanner(
+                count = state.missingMediaCount,
+                onClick = { showRelinkDialog = true },
+            )
+        }
+
+        if (showRelinkDialog) {
+            val missing = remember(state.project) {
+                state.project?.media?.filter { !it.available }.orEmpty()
+            }
+            RelinkDialog(
+                missing = missing,
+                onLocate = { mediaId, kind ->
+                    relinkTargetId = mediaId
+                    relinkLauncher.launch(kind.mimeTypesForRelink())
+                },
+                onDismiss = { showRelinkDialog = false },
+            )
         }
     }
 
@@ -422,12 +482,19 @@ private fun ContextualToolbar(
 }
 
 @Composable
-private fun MissingMediaBanner(count: Int) {
-    Box(
+private fun MissingMediaBanner(count: Int, onClick: () -> Unit) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.errorContainer)
-            .padding(12.dp),
+            .clickable(onClick = onClick)
+            .padding(12.dp)
+            .semantics {
+                contentDescription = "$count files used in this project could not be found. " +
+                    "Tap to relink them to files on your device."
+            },
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = if (count == 1) {
@@ -439,8 +506,65 @@ private fun MissingMediaBanner(count: Int) {
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onErrorContainer,
+            modifier = Modifier.weight(1f),
         )
+        TextButton(onClick = onClick) { Text("Relink") }
     }
+}
+
+/**
+ * Lists every clip's media that could not be found, each with a button to point
+ * it at a replacement file. The PRD's "clear relink UI" for missing media —
+ * relinking assumes the same content moved or was renamed, not that a different
+ * file should take its place, so no metadata is re-read; only the location is
+ * updated.
+ */
+@Composable
+private fun RelinkDialog(
+    missing: List<com.apexedits.core.model.MediaRef>,
+    onLocate: (mediaId: String, kind: com.apexedits.core.model.MediaKind) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Relink Missing Media") },
+        text = {
+            Column {
+                Text(
+                    text = "These files could not be found. Locate each one on your device to " +
+                        "restore it — ApexEdits assumes it is the same file, just moved or renamed.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                missing.forEach { media ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = media.displayName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { onLocate(media.id, media.kind) }) {
+                            Text("Locate File")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+    )
+}
+
+/** MIME filter for the relink picker, scoped to the kind of the missing media. */
+private fun com.apexedits.core.model.MediaKind.mimeTypesForRelink(): Array<String> = when (this) {
+    com.apexedits.core.model.MediaKind.VIDEO -> arrayOf("video/*")
+    com.apexedits.core.model.MediaKind.AUDIO -> arrayOf("audio/*")
+    com.apexedits.core.model.MediaKind.IMAGE -> arrayOf("image/*")
 }
 
 /** Pulls one or many URIs out of a picker result, which reports them differently. */

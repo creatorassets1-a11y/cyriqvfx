@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -39,6 +40,7 @@ import com.apexedits.core.data.ProjectEntity
 import com.apexedits.core.data.aspectRatio
 import com.apexedits.core.data.frameRate
 import com.apexedits.core.designsystem.ApexScaffold
+import com.apexedits.core.designsystem.ApexToolButton
 import com.apexedits.core.designsystem.overflowSentinel
 import com.apexedits.core.model.AspectRatio
 import com.apexedits.core.model.FrameRate
@@ -55,6 +57,7 @@ import com.apexedits.core.model.Ticks
 fun ProjectsScreen(
     viewModel: ProjectsViewModel,
     onOpenProject: (String) -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val projects by viewModel.projects.collectAsStateWithLifecycle()
@@ -66,7 +69,7 @@ fun ProjectsScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().overflowSentinel("ProjectsList"),
-                contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp),
+                contentPadding = PaddingValues(16.dp, 56.dp, 16.dp, 96.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
@@ -81,6 +84,16 @@ fun ProjectsScreen(
                 }
             }
         }
+
+        ApexToolButton(
+            icon = Icons.Filled.Settings,
+            label = "Settings",
+            tooltip = "Settings — Change performance, storage, and privacy options.",
+            description = "Open app settings for performance, storage management, and licence " +
+                "information.",
+            onClick = onOpenSettings,
+            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+        )
 
         ExtendedFloatingActionButton(
             onClick = { showNewProject = true },

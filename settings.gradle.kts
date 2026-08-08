@@ -38,5 +38,6 @@ include(":core:nativeengine")
 include(":feature:projects")
 include(":feature:editor")
 include(":feature:export")
+include(":feature:settings")
 
 include(":app")

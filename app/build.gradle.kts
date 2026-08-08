@@ -69,6 +69,7 @@ dependencies {
     implementation(project(":core:designsystem"))
     implementation(project(":core:nativeengine"))
     implementation(project(":feature:projects"))
+    implementation(project(":feature:settings"))
     implementation(project(":feature:editor"))
     implementation(project(":feature:export"))
 

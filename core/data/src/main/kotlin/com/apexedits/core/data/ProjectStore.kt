@@ -156,6 +156,50 @@ class ProjectStore(
         thumbnailDir(projectId).mkdirs()
     }
 
+    /**
+     * A breakdown of on-device storage, for the Settings screen.
+     *
+     * The PRD asks for "Storage management (clear cache, proxies)" as its own
+     * settings section, which means the user needs to see where space is going
+     * before deciding what to clear — a single combined total does not answer
+     * "is it my footage or the app's caches".
+     */
+    data class StorageBreakdown(
+        val documentsBytes: Long,
+        val mediaBytes: Long,
+        val proxyBytes: Long,
+        val thumbnailBytes: Long,
+    ) {
+        val totalBytes: Long get() = documentsBytes + mediaBytes + proxyBytes + thumbnailBytes
+    }
+
+    suspend fun storageBreakdown(): StorageBreakdown = withContext(io) {
+        var documents = 0L
+        var media = 0L
+        var proxies = 0L
+        var thumbnails = 0L
+
+        root.listFiles()?.forEach { projectDir ->
+            if (!projectDir.isDirectory) return@forEach
+            documents += (File(projectDir, "project.json").length() + File(projectDir, "project.autosave").length())
+            media += File(projectDir, "media").sizeRecursively()
+            proxies += File(projectDir, "proxies").sizeRecursively()
+            thumbnails += File(projectDir, "thumbs").sizeRecursively()
+        }
+        StorageBreakdown(documents, media, proxies, thumbnails)
+    }
+
+    /** Clears generated caches across every project. The Settings "Clear cache" action. */
+    suspend fun clearAllCaches(): Unit = withContext(io) {
+        root.listFiles()?.forEach { projectDir ->
+            if (!projectDir.isDirectory) return@forEach
+            clearCaches(projectDir.name)
+        }
+    }
+
+    private fun File.sizeRecursively(): Long =
+        if (isDirectory) walkBottomUp().filter { it.isFile }.sumOf { it.length() } else 0L
+
     // --- serialisation -------------------------------------------------------
 
     private fun readDocument(file: File): Project? = runCatching {

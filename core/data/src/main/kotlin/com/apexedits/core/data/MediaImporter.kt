@@ -134,6 +134,21 @@ class MediaImporter(
         }
     }
 
+    /**
+     * Prepares a URI picked to relink a missing clip, and returns it as a string
+     * ready for [com.apexedits.core.engine.edit.relinkMedia].
+     *
+     * Deliberately does not re-run full metadata extraction: relinking assumes
+     * the picked file *is* the original — moved or renamed, not replaced with
+     * different content — so the clip's stored duration and dimensions still
+     * describe it. Only the read grant needs renewing, since the new URI has
+     * never been persisted before.
+     */
+    fun preparePersistableUri(uri: Uri): String {
+        takePersistablePermission(uri)
+        return uri.toString()
+    }
+
     private fun takePersistablePermission(uri: Uri) {
         runCatching {
             context.contentResolver.takePersistableUriPermission(

@@ -5,9 +5,11 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.apexedits.core.data.AutoSave
+import com.apexedits.core.data.DevicePreferences
 import com.apexedits.core.data.MediaImporter
 import com.apexedits.core.data.ProjectDatabase
 import com.apexedits.core.data.ProjectStore
+import com.apexedits.core.device.DeviceClass
 import com.apexedits.core.device.DeviceProfile
 import com.apexedits.core.device.HeavyOperation
 import com.apexedits.core.device.LowResourceWarning
@@ -21,6 +23,7 @@ import com.apexedits.core.engine.edit.appendClip
 import com.apexedits.core.engine.edit.deleteClip
 import com.apexedits.core.engine.edit.duplicateClip
 import com.apexedits.core.engine.edit.insertClipAt
+import com.apexedits.core.engine.edit.relinkMedia
 import com.apexedits.core.engine.edit.rippleDeleteClip
 import com.apexedits.core.engine.edit.setClipSpeed
 import com.apexedits.core.engine.edit.setClipVolume
@@ -39,6 +42,7 @@ import com.apexedits.core.model.createClip
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -60,6 +64,7 @@ class EditorViewModel(
     private val store = ProjectStore(application, database.projectDao())
     private val importer = MediaImporter(application)
     private val autoSave = AutoSave(store, viewModelScope)
+    private val preferences = DevicePreferences(application)
 
     private val ids: IdSource = CountingIdSource(System.currentTimeMillis())
 
@@ -202,18 +207,44 @@ class EditorViewModel(
     fun addTrack(kind: TrackKind) {
         val project = _state.value.project ?: return
         val policy = _state.value.deviceProfile?.effectivePolicy
+        val action = { apply("Add track") { it.addTrack(ids, kind) } }
 
         // A soft limit: the user is warned, never blocked. The PRD is explicit
         // that a weak device gets warnings and safer defaults, not a smaller
         // feature set.
         if (policy != null && project.tracks.size >= policy.softTrackLimit) {
-            _state.value = _state.value.copy(
-                warning = LowResourceWarning(HeavyOperation.MANY_LAYERS, policy.deviceClass),
-                pendingAction = { apply("Add track") { it.addTrack(ids, kind) } },
-            )
-            return
+            warnThenRun(HeavyOperation.MANY_LAYERS, policy.deviceClass, action)
+        } else {
+            action()
         }
-        apply("Add track") { it.addTrack(ids, kind) }
+    }
+
+    /**
+     * Runs [action] immediately if this warning was suppressed for the device, or
+     * shows the Limited Resources dialog first.
+     *
+     * The suppression check is a DataStore read, which is asynchronous, so this
+     * always takes at least one coroutine hop even when the answer turns out to
+     * be "run it now" — a heavy operation is never so time-critical that this
+     * costs anything perceptible.
+     */
+    private fun warnThenRun(
+        operation: HeavyOperation,
+        deviceClass: DeviceClass,
+        action: () -> Unit,
+    ) {
+        viewModelScope.launch {
+            val suppressed = preferences.isSuppressed(operation).first()
+            if (suppressed) {
+                action()
+            } else {
+                _state.value = _state.value.copy(
+                    warning = LowResourceWarning(operation, deviceClass),
+                    pendingAction = action,
+                    suppressWarningChecked = false,
+                )
+            }
+        }
     }
 
     // --- transform and keyframes --------------------------------------------
@@ -312,6 +343,26 @@ class EditorViewModel(
 
     fun importIntent() = importer.pickIntent()
 
+    // --- missing media relink --------------------------------------------
+
+    /**
+     * Relinks [mediaId] to a file the user just picked to replace a moved or
+     * deleted one.
+     *
+     * The count in [EditorUiState.missingMediaCount] is recomputed from the
+     * document, not decremented by hand, so it cannot drift out of sync with
+     * what the banner is actually counting.
+     */
+    fun relinkMedia(mediaId: String, uri: Uri) {
+        val uriString = importer.preparePersistableUri(uri)
+        apply("Relink media") { it.relinkMedia(mediaId, uriString) }
+        val project = _state.value.project ?: return
+        _state.value = _state.value.copy(missingMediaCount = project.media.count { !it.available })
+    }
+
+    /** The media the relink dialog should offer, unavailable ones first. */
+    fun missingMedia() = _state.value.project?.media?.filter { !it.available }.orEmpty()
+
     // --- recovery and warnings ----------------------------------------------
 
     /** Accepts the "Restore last session?" offer. */
@@ -329,13 +380,27 @@ class EditorViewModel(
     }
 
     fun dismissWarningAndContinue() {
+        val warning = _state.value.warning
         val action = _state.value.pendingAction
-        _state.value = _state.value.copy(warning = null, pendingAction = null)
+        val suppress = _state.value.suppressWarningChecked
+
+        _state.value = _state.value.copy(warning = null, pendingAction = null, suppressWarningChecked = false)
         action?.invoke()
+
+        // Persisted after the action runs, not before: if the app died mid-action
+        // for some unrelated reason, the warning should still be there next time
+        // rather than silently suppressed for something that never completed.
+        if (suppress && warning != null) {
+            viewModelScope.launch { preferences.setSuppressed(warning.operation, true) }
+        }
     }
 
     fun dismissWarning() {
-        _state.value = _state.value.copy(warning = null, pendingAction = null)
+        _state.value = _state.value.copy(warning = null, pendingAction = null, suppressWarningChecked = false)
+    }
+
+    fun setSuppressWarningChecked(checked: Boolean) {
+        _state.value = _state.value.copy(suppressWarningChecked = checked)
     }
 
     fun useSaferSettings() {
@@ -377,6 +442,7 @@ data class EditorUiState(
     val missingMediaCount: Int = 0,
     val warning: LowResourceWarning? = null,
     val pendingAction: (() -> Unit)? = null,
+    val suppressWarningChecked: Boolean = false,
     val message: String? = null,
     val openPanel: EditorPanel? = null,
 ) {

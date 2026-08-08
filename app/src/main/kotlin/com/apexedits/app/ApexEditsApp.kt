@@ -18,6 +18,8 @@ import com.apexedits.feature.export.ExportScreen
 import com.apexedits.feature.export.ExportViewModel
 import com.apexedits.feature.projects.ProjectsScreen
 import com.apexedits.feature.projects.ProjectsViewModel
+import com.apexedits.feature.settings.SettingsScreen
+import com.apexedits.feature.settings.SettingsViewModel
 
 /**
  * The app.
@@ -35,6 +37,7 @@ object Routes {
     const val PROJECTS = "projects"
     const val EDITOR = "editor/{projectId}"
     const val EXPORT = "export/{projectId}"
+    const val SETTINGS = "settings"
 
     fun editor(projectId: String) = "editor/$projectId"
     fun export(projectId: String) = "export/$projectId"
@@ -56,7 +59,17 @@ fun ApexEditsApp() {
                 ProjectsScreen(
                     viewModel = viewModel,
                     onOpenProject = { navController.navigate(Routes.editor(it)) },
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 )
+            }
+
+            composable(Routes.SETTINGS) {
+                val application = androidx.compose.ui.platform.LocalContext.current
+                    .applicationContext as Application
+                val viewModel: SettingsViewModel = viewModel(
+                    factory = viewModelFactory { SettingsViewModel(application) },
+                )
+                SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
             }
 
             composable(
