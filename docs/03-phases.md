@@ -25,7 +25,11 @@ animate through one system, so it comes first and everything else plugs into it.
 2. **Transform UI** — on-screen handles on the preview; sliders exist today.
 3. **Colour** — basic sliders, then curves, wheels, LUTs.
 4. **Effects & transitions** — library, performance tags, keyframeable parameters.
-5. **Masks and chroma key** — first real FFmpeg work (ADR 0002).
+5. **Masks and chroma key** — chroma-key *core* built natively (ADR 0006/0007,
+   `core:nativeengine`), ahead of the rest of this phase, because it needed no
+   model and no device to get right. GPU shader port, background-removal AI
+   tiers (MODNet/BiRefNet via ONNX Runtime Mobile), and manual refinement UI
+   remain.
 6. **Audio** — waveforms, fades, EQ, compression, voiceover.
 7. **Proxies** — the generator behind the policy that already decides proxy size.
 8. **Text** — typography, animation presets.

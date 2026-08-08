@@ -12,6 +12,7 @@
 :feature:projects    Home screen, New Project dialog.
 :feature:editor      Preview, timeline, contextual toolbar, editor view model.
 :feature:export      Export presets, screen, and the WorkManager render job.
+:core:nativeengine   C++/NDK video engine — matting, keying, zero-copy compositing.
 :app                 Application, MainActivity, navigation.
 ```
 
@@ -228,3 +229,23 @@ The development host has no hardware virtualisation — no `vmx`/`svm`, no
 export, and the alpha shader's GLSL are **unexecuted** in this environment. They
 are verified on a device or in the CI emulator job, and the coverage table says
 so rather than implying otherwise.
+
+
+## The hybrid engine (ADR 0006, ADR 0007)
+
+`core:nativeengine` is the start of a second split, orthogonal to the module
+map above: **Kotlin owns the document, C++ owns the pixels.** Full rationale in
+ADR 0006; the background-removal design that motivated it is ADR 0007, backed by
+research in `docs/research/01-video-matting-2026.md`.
+
+The JNI boundary is deliberately tiny — parameters cross it; frames do not. The
+first slice through it is the chroma-key core (`apex::matte`), chosen because it
+needs no model, no GPU and no device to verify: it is pure per-pixel arithmetic,
+so it has a full host-runnable test suite (84 C++ checks) and is proven to build
+through the real AGP → CMake → NDK pipeline for both arm64-v8a and armeabi-v7a,
+packaged into the APK with correctly exported JNI symbols.
+
+What is not yet true: nothing runs on a GPU, no model has been integrated, and
+no number in either ADR has been measured on real hardware — this development
+environment has no GPU, NPU or emulator. The feature coverage table is explicit
+about the line between what is built and what is a target.

@@ -27,6 +27,10 @@ under test.
 - Device classification and the low-resource warning flow.
 - Auto-save with crash recovery.
 - The zero-overflow layout system and the self-explanatory control library.
+- The start of a hybrid Kotlin/C++ engine (`core:nativeengine`): a professional
+  chroma keyer core in C++, verified with 84 host-runnable tests and proven to
+  build through AGP + CMake + NDK for both ABIs into the shipped APK. Deep
+  research and architecture for background removal — see below.
 
 **Not built.** Most of the PRD: colour grading, effects, transitions, masks,
 chroma key, stabilisation, audio processing beyond volume, text, Whisper
@@ -42,7 +46,7 @@ render contract, and the two UI guarantees the PRD is most specific about.
 ## Building
 
 ```bash
-./gradlew test              # 189 unit tests
+./gradlew test              # 193 unit tests (Kotlin) + 84 C++ host tests via :core:nativeengine:hostTest
 ./gradlew test -Papex.sampleVideo=/path/to/clip.mp4   # also check the fixture against real media
 ./gradlew :app:lintDebug
 ./gradlew assembleDebug     # → app/build/outputs/apk/debug/app-debug.apk (~24 MB)
@@ -102,6 +106,8 @@ figures. That caught two bugs synthetic fixtures had not: a lossy microsecond
 conversion costing 28 ms of animation drift, and a composition that threw
 whenever a track's first clip did not start at zero.
 
+**Research before code, for the highest-risk feature.** Background removal is the PRD's hardest requirement, and the two best published video matting systems turned out to be unshippable in an MIT app — RVM is GPL-3.0, MatAnyone is non-commercial-only. That is recorded in [`docs/research/01-video-matting-2026.md`](docs/research/01-video-matting-2026.md) rather than discovered after building around them.
+
 **No `INTERNET` permission.** The offline and privacy claims are verifiable from
 the built APK rather than from a policy document — the app has no network egress
 path at all. The permissions it does hold are notifications and foreground
@@ -122,6 +128,9 @@ network access.
 | [`docs/adr/0003-whisper-bundling.md`](docs/adr/0003-whisper-bundling.md) | No official AAR; vendoring whisper.cpp |
 | [`docs/adr/0004-preview-export-parity.md`](docs/adr/0004-preview-export-parity.md) | One composition, two consumers |
 | [`docs/adr/0005-keyframe-rendering.md`](docs/adr/0005-keyframe-rendering.md) | Animating through `MatrixTransformation`, and what it cannot cover |
+| [`docs/adr/0006-hybrid-native-engine.md`](docs/adr/0006-hybrid-native-engine.md) | Kotlin owns the document, C++ owns the pixels — the JNI boundary and zero-copy plan |
+| [`docs/adr/0007-background-removal.md`](docs/adr/0007-background-removal.md) | Chroma key + two-tier AI matting architecture |
+| [`docs/research/01-video-matting-2026.md`](docs/research/01-video-matting-2026.md) | Matting model research: quality, licensing, mobile runtime survey |
 | [`docs/LICENSES.md`](docs/LICENSES.md) | Attribution for bundled and planned components |
 
 ## Licence

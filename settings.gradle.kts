@@ -32,6 +32,7 @@ include(":core:designsystem")
 include(":core:device")
 include(":core:data")
 include(":core:media")
+include(":core:nativeengine")
 
 // Features.
 include(":feature:projects")

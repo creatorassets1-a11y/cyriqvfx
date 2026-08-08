@@ -104,7 +104,6 @@ professional editing · **P3** captions and polish · **P4** hardening.
 | Keyframeable transform (position, scale, rotation) | Built | P2 | `engine/animation`, `KeyframedTransformation` — preview and export share one effect |
 | Keyframeable opacity | Built | P2 | `KeyframedAlphaEffect` — a `GlEffect` setting `uAlphaScale` per frame. The GLSL is Media3's own alpha-scale shader; **the shader itself is unverified without a GPU**, only its uniform computation is unit-tested |
 | Keyframeable volume | Built | P2 | `KeyframedGainProcessor` — a `BaseAudioProcessor`. Pure buffer maths, so it is verified sample-by-sample against the interpolator |
-| Chroma key with tolerance/edge/spill/shadow | Planned | P2 | FFmpeg `chromakey` |
 | Masks: rectangle, ellipse, freehand, text, linear | Planned | P2 | — |
 | Mask feather, invert, track matte | Planned | P2 | — |
 | Object / motion tracking | Planned | P3 | — |
@@ -114,6 +113,38 @@ professional editing · **P3** captions and polish · **P4** hardening.
 | Blending modes | Planned | P2 | — |
 | Adjustment layers | Planned | P3 | — |
 | Optical-flow slow motion | Planned | P3 | — |
+
+## Background removal (PRD "Critical Feature") — research done, foundation started
+
+Full research and architecture recorded in
+[`docs/research/01-video-matting-2026.md`](research/01-video-matting-2026.md),
+[`docs/adr/0006-hybrid-native-engine.md`](adr/0006-hybrid-native-engine.md), and
+[`docs/adr/0007-background-removal.md`](adr/0007-background-removal.md).
+
+**Key finding:** the two strongest published video matting systems are licensed
+out of reach for an MIT app — RVM is GPL-3.0, MatAnyone is non-commercial-only
+(S-Lab 1.0). The shippable path is MODNet (Apache 2.0, fast tier) and BiRefNet
+(MIT, quality tier), with temporal stability built in our own code rather than
+inherited from either model.
+
+| Component | Status | Where |
+|---|---|---|
+| Hybrid Kotlin/C++ architecture decided | Built | ADR 0006 — `core:nativeengine` module, JNI boundary, zero-copy plan |
+| Chroma key core: YCbCr-chroma keying, luma-normalised (survives uneven screen lighting) | Built | `apex::matte::key_alpha` — 84 C++ host tests |
+| Spill suppression (channel-limiting, not desaturation) | Built | `apex::matte::suppress_spill` |
+| Matte cleanup: choker (erode/dilate), feather | Built | `choke_alpha`, `feather_alpha` |
+| Guided/joint-bilateral upsample (small inference, full-res edges) | Built | `guided_upsample` — the mechanism that will make the fast AI tier viable |
+| GPU shader transliteration of the keyer | Planned | CPU reference exists; GLSL port not started |
+| Light wrap, edge-band secondary correction | Planned | Designed in ADR 0007, not implemented |
+| JNI boundary, both ABIs building via AGP+CMake+NDK | Built | `core/nativeengine/src/main/cpp`, verified: real `.so` for arm64-v8a and armeabi-v7a, correct exported JNI symbols, packaged into the APK |
+| ONNX Runtime Mobile integration | Planned | Decided in ADR 0007; not started — needs a device to validate |
+| MODNet fast-tier matting | Planned | Model licence confirmed (Apache 2.0); not integrated |
+| BiRefNet quality-tier matting | Planned | Model licence confirmed (MIT); not integrated |
+| Temporal stabiliser (motion-gated EMA, flow-warped prior) | Planned | Designed in ADR 0007 §"Temporal stability" |
+| Manual mask refinement (paint, shape masks) | Planned | Storage strategy decided (vector ops, clip-relative time); not built |
+| Background replace: colour / image / video / blur / transparent | Planned | — |
+| Low-spec warnings for background removal specifically | Planned | Hooks into existing `HeavyOperation`/`PerformancePolicy` |
+| On-device performance benchmarks (FPS, memory, thermal) | **Not measured** | This build environment has no GPU/NPU/emulator — every number in the ADRs is a target, not a measurement |
 
 ## Effects, transitions, colour
 
