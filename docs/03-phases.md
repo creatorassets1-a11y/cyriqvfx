@@ -1,6 +1,8 @@
 # Build phases
 
-Following PRD §4.4. Phase 1 is done; the rest is sequenced but not built.
+Following PRD §4.4. Phase 1 is done; Phase 2 is under way, with keyframes,
+markers, audio (volume/pan/fades), speed, timeline thumbnails/waveforms, and
+basic colour correction built. The rest is sequenced but not built.
 
 ## Phase 1 — Foundation ✅
 
@@ -18,22 +20,29 @@ animate through one system, so it comes first and everything else plugs into it.
 
 1. **Keyframes** ✅ — model, interpolation, easing, editing operations, timeline
    diamonds, and the three-state diamond in the Transform panel. Rendered through
-   a single `MatrixTransformation` so preview and export cannot diverge.
-   Remaining: the graph editor, dragging diamonds on the timeline, and animated
-   opacity/volume at the renderer (both need a shader program rather than a
-   matrix).
-2. **Transform UI** — on-screen handles on the preview; sliders exist today.
-3. **Colour** — basic sliders, then curves, wheels, LUTs.
-4. **Effects & transitions** — library, performance tags, keyframeable parameters.
-5. **Masks and chroma key** — chroma-key *core* built natively (ADR 0006/0007,
+   a single `MatrixTransformation` (geometry), a `GlEffect` (opacity), an
+   `RgbMatrix` (colour), and a `BaseAudioProcessor` (volume) so preview and
+   export cannot diverge. Remaining: the graph editor and dragging diamonds on
+   the timeline.
+2. **Markers** ✅ — add/rename/delete/colour-tag, ruler flags, dialog.
+3. **Transform UI** — on-screen handles on the preview; sliders exist today.
+4. **Colour** ✅ (basic) — exposure, contrast, saturation, temperature, tint,
+   each keyframeable through `KeyframedColorMatrix`. Curves, wheels, and LUTs
+   remain.
+5. **Effects & transitions** — library, performance tags, keyframeable parameters.
+6. **Masks and chroma key** — chroma-key *core* built natively (ADR 0006/0007,
    `core:nativeengine`), ahead of the rest of this phase, because it needed no
    model and no device to get right. GPU shader port, background-removal AI
    tiers (MODNet/BiRefNet via ONNX Runtime Mobile), and manual refinement UI
    remain.
-6. **Audio** — waveforms, fades, EQ, compression, voiceover.
-7. **Proxies** — the generator behind the policy that already decides proxy size.
-8. **Text** — typography, animation presets.
-9. **Stabilisation** — `vidstab`.
+7. **Audio** ✅ (core controls) — per-clip volume (keyframeable), pan, fade
+   in/out, waveforms on the timeline. EQ, compression, and voiceover remain.
+8. **Speed** ✅ — constant speed with a slider and presets. Ramping/time
+   remapping remains.
+9. **Thumbnails** ✅ — video thumbnail strips on the timeline.
+10. **Proxies** — the generator behind the policy that already decides proxy size.
+11. **Text** — typography, animation presets.
+12. **Stabilisation** — `vidstab`.
 
 ## Phase 3 — Captions & polish
 

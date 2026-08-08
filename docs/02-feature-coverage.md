@@ -36,7 +36,7 @@ professional editing · **P3** captions and polish · **P4** hardening.
 | Proxy quality toggle | Modelled | P2 | Policy field exists; Settings UI pending |
 | Media metadata view | Modelled | P1 | `MediaRef` carries all of it; no browser screen yet |
 | Media favourite, search, folders/tags | Planned | P3 | — |
-| Relink missing media | Modelled | P2 | `relinkMedia` + `refreshAvailability` built; picker UI pending |
+| Relink missing media | Built | P2 | `relinkMedia` + `refreshAvailability`; clickable missing-media banner opens `RelinkDialog`, launches the system file picker per missing item |
 | Duplicate clip | Built | P1 | `duplicateClip` |
 | Replace media in timeline | Planned | P2 | — |
 
@@ -64,14 +64,14 @@ professional editing · **P3** captions and polish · **P4** hardening.
 | Nest / compound clips | Planned | P3 | — |
 | Freeze frame | Planned | P2 | — |
 | Reverse | Planned | P2 | — |
-| Constant speed | Built | P1 | `setClipSpeed`, clamped 0.1×–100× |
+| Constant speed | Built | P1 | `setClipSpeed`, clamped 0.1×–100×; Speed panel with slider + presets |
 | Speed curves / ramping / time remapping | Planned | P2 | — |
 | Keyframe diamonds on the selected clip | Built | P2 | `Timeline.kt` `KeyframeMarkers` |
 | Drag a keyframe on the timeline | Planned | P2 | `moveKeyframe` exists in the engine; no gesture yet |
-| Markers | Modelled | P2 | `Marker` in the document; no UI |
-| Chapters, comments | Modelled | P3 | `Marker.note` |
-| Waveforms on audio | Planned | P2 | `ThumbnailCache` is the pattern to follow |
-| Thumbnails on video | Modelled | P2 | `ThumbnailCache` built; strip not yet drawn |
+| Markers | Built | P2 | `Marker`, `addMarker`/`renameMarker`/`removeMarker`/`setMarkerColorTag`/`moveMarker`; ruler flags + `MarkerDialog` |
+| Chapters, comments | Built | P3 | Comments via `Marker.note`, edited in `MarkerDialog`; no dedicated chapters list view |
+| Waveforms on audio | Built | P2 | `WaveformExtractor` + `computeWaveformPeaks`; MediaCodec decode loop itself unverified without a device |
+| Thumbnails on video | Built | P2 | `ThumbnailCache`; strip drawn in `Timeline.kt`'s `VideoThumbnailStrip` |
 | Multi-select | Modelled | P2 | `deleteClips` takes a collection |
 | Copy/paste attributes | Planned | P2 | — |
 | Deep undo/redo, persistent per project | Built | P1 | `history/History.kt`, 200 deep, drag-coalescing |
@@ -104,6 +104,7 @@ professional editing · **P3** captions and polish · **P4** hardening.
 | Keyframeable transform (position, scale, rotation) | Built | P2 | `engine/animation`, `KeyframedTransformation` — preview and export share one effect |
 | Keyframeable opacity | Built | P2 | `KeyframedAlphaEffect` — a `GlEffect` setting `uAlphaScale` per frame. The GLSL is Media3's own alpha-scale shader; **the shader itself is unverified without a GPU**, only its uniform computation is unit-tested |
 | Keyframeable volume | Built | P2 | `KeyframedGainProcessor` — a `BaseAudioProcessor`. Pure buffer maths, so it is verified sample-by-sample against the interpolator |
+| Keyframeable colour: exposure, contrast, saturation, temperature, tint | Built | P2 | `KeyframedColorMatrix implements RgbMatrix`; matrix maths reuse Media3's own decompiled `Contrast`/`RgbAdjustment` formulas, unit-tested; the GLSL itself is unverified without a GPU |
 | Masks: rectangle, ellipse, freehand, text, linear | Planned | P2 | — |
 | Mask feather, invert, track matte | Planned | P2 | — |
 | Object / motion tracking | Planned | P3 | — |
@@ -155,7 +156,8 @@ inherited from either model.
 | Effects: blur, sharpen, glow, glitch, VHS, grain, light leaks, mosaic, mirror | Planned | P2 | — |
 | Particles | Planned | P3 | — |
 | Effect performance tags (Light/Medium/Heavy) | Planned | P2 | Pairs with `HeavyOperation` |
-| Colour basic: exposure, contrast, saturation, temperature, tint, highlights/shadows, vibrance | Planned | P2 | — |
+| Colour basic: exposure, contrast, saturation, temperature, tint | Built | P2 | `ColorAdjustment`, `KeyframedColorMatrix`, Colour panel — see Video tools |
+| Colour basic: highlights/shadows, vibrance | Planned | P2 | Needs a tonal-range split the current single-matrix approach does not have |
 | Colour advanced: RGB/HSL curves | Planned | P2 | — |
 | Colour wheels (lift/gamma/gain) | Planned | P2 | — |
 | HSL secondary | Planned | P3 | — |
@@ -172,9 +174,9 @@ inherited from either model.
 | Volume per clip and per track | Built | P1 | `setClipVolume`, `Track.volume` |
 | Mute | Built | P1 | `setTrackMuted` |
 | Solo (wins over mute, non-destructive) | Built | P1 | `composeFrame`, `ComposeTest` |
-| Pan | Planned | P2 | — |
-| Keyframeable volume automation | Planned | P2 | — |
-| Fade in/out handles | Planned | P2 | — |
+| Pan | Built | P2 | `Clip.pan`, `setClipPan`, `PanProcessor` — a static balance control, not keyframeable (see Audio panel design note) |
+| Keyframeable volume automation | Built | P2 | See Video tools — `KeyframedGainProcessor` |
+| Fade in/out handles | Built | P2 | `Clip.fadeInDuration`/`fadeOutDuration`, `fadeEnvelope()`, Audio panel sliders |
 | Parametric EQ | Planned | P2 | — |
 | Compression | Planned | P2 | — |
 | Noise reduction / gate | Planned | P2 | — |
@@ -234,7 +236,7 @@ inherited from either model.
 | New Project dialog with per-option guidance | Built | P1 | `AspectRatio.guidance` |
 | Export screen with explained presets | Built | P1 | `ExportScreen` |
 | Media library with Device/Camera/Stock/Music tabs | Planned | P2 | System picker used for now |
-| Settings (performance, storage, theme, licences) | Planned | P2 | — |
+| Settings (performance, storage, theme, licences) | Built | P2 | `feature:settings` — device profile, storage breakdown + clear caches, always-full-quality toggle, licence list |
 | RTL support | Built | P1 | `supportsRtl`, asserted in the overflow matrix |
 | Localisation-ready strings | Built | P1 | `core/designsystem/res/values/strings.xml` |
 
@@ -246,7 +248,7 @@ inherited from either model.
 | Classification from RAM, cores, Media Performance Class, storage | Built | P1 | `DeviceCapabilities` |
 | Thermal state monitoring + automatic quality reduction | Built | P1 | `ThermalState`, `effectivePolicy` |
 | Low-resource warning dialog with the PRD's three buttons | Built | P1 | `LowResourceWarning`, `EditorScreen` |
-| "Don't show again for this device" | Modelled | P2 | Copy and button exist; DataStore persistence pending |
+| "Don't show again for this device" | Built | P2 | `DevicePreferences` (DataStore), keyed per `HeavyOperation` |
 | Soft track/layer limits | Built | P1 | `softTrackLimit`, warns without blocking |
 | Export ceiling by device class | Built | P1 | `ExportSettings.exceeds` + inline warning |
 | Auto-save every few seconds | Built | P1 | `AutoSave`, 2 s debounce |

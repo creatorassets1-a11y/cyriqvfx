@@ -3,28 +3,37 @@
 A professional, offline-first video editor for Android. 100% Kotlin, Jetpack
 Compose, Media3. Free, no ads, no accounts, no tracking.
 
-This repository holds the **Phase 1 foundation** described in
-[`docs/PRD.md`](docs/PRD.md) — the parts everything else is built on, working and
-under test.
+This repository holds the **Phase 1 foundation and a growing slice of Phase 2**
+described in [`docs/PRD.md`](docs/PRD.md) — the editorial core plus keyframe
+animation, audio, speed, and basic colour correction, working and under test.
 
 ## What state it is in
 
 **Built and building.** A real Android app that assembles, installs and runs:
 
 - A frame-accurate edit engine — timeline model, split, trim, ripple, move,
-  duplicate, deep undo — as pure Kotlin, with 189 unit tests across the core
-  modules, including the persistence layer under Robolectric.
-- Keyframe animation for position, scale, rotation, **opacity and volume**:
-  easing presets, custom bezier curves, a three-state keyframe diamond per
-  property, and diamonds on the timeline. Preview and export share one Media3
-  effect pipeline, so an animation cannot render differently in the two.
-- Multi-track timeline with pinch zoom, selection, and track lock/mute.
+  duplicate, deep undo, markers — as pure Kotlin, with 259 unit tests across
+  the core modules, including the persistence layer under Robolectric.
+- Keyframe animation for position, scale, rotation, opacity, volume, and
+  **exposure/contrast/saturation/temperature/tint**: easing presets, custom
+  bezier curves, a three-state keyframe diamond per property, and diamonds on
+  the timeline. Preview and export share one Media3 effect pipeline, so an
+  animation cannot render differently in the two.
+- Multi-track timeline with pinch zoom, selection, track lock/mute, timeline
+  markers, video thumbnail strips, and audio waveforms.
+- Audio: per-clip volume (keyframeable), stereo balance, and fade in/out, on
+  top of track mute/solo/volume mixing.
+- Constant clip speed with quick presets, and basic colour correction —
+  exposure, contrast, saturation, temperature, tint — each independently
+  animatable.
 - Media3 preview over a `Composition` built from the timeline.
-- Media import from device storage, with metadata, rotation handling, and
-  missing-media detection.
+- Media import from device storage, with metadata, rotation handling, and a
+  relink flow for missing media.
 - Export with explained presets, running in the background with a notification,
   progress and cancel, saving to the gallery.
-- Device classification and the low-resource warning flow.
+- Device classification, the low-resource warning flow (with a persisted
+  "don't show again" per warning type), and a Settings screen for storage and
+  performance.
 - Auto-save with crash recovery.
 - The zero-overflow layout system and the self-explanatory control library.
 - The start of a hybrid Kotlin/C++ engine (`core:nativeengine`): a professional
@@ -32,10 +41,11 @@ under test.
   build through AGP + CMake + NDK for both ABIs into the shipped APK. Deep
   research and architecture for background removal — see below.
 
-**Not built.** Most of the PRD: colour grading, effects, transitions, masks,
-chroma key, stabilisation, audio processing beyond volume, text, Whisper
-captions, FFmpeg integration, stock media — and, within keyframes, the animation
-graph editor and dragging diamonds on the timeline. All of it is tracked individually in
+**Not built.** The largest remaining pieces of the PRD: AI background removal
+(chroma key's C++ core exists; MODNet/BiRefNet integration does not), effects,
+transitions, masks, stabilisation, text/captions, Whisper, FFmpeg integration,
+stock media — and, within keyframes, the animation graph editor and dragging
+diamonds on the timeline. All of it is tracked individually in
 [`docs/02-feature-coverage.md`](docs/02-feature-coverage.md) with a status and a
 target phase — nothing has been quietly dropped.
 
@@ -46,7 +56,7 @@ render contract, and the two UI guarantees the PRD is most specific about.
 ## Building
 
 ```bash
-./gradlew test              # 193 unit tests (Kotlin) + 84 C++ host tests via :core:nativeengine:hostTest
+./gradlew test              # 259 unit tests (Kotlin) + 84 C++ host tests via :core:nativeengine:hostTest
 ./gradlew test -Papex.sampleVideo=/path/to/clip.mp4   # also check the fixture against real media
 ./gradlew :app:lintDebug
 ./gradlew assembleDebug     # → app/build/outputs/apk/debug/app-debug.apk (~24 MB)
