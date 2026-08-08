@@ -136,6 +136,12 @@ data class Clip(
     val sourceOut: Ticks,
     val transform: Transform = Transform(),
     val volume: Float = 1f,
+    /** Stereo balance, -1 (full left) to 1 (full right). 0 is centred. Not animatable. */
+    val pan: Float = 0f,
+    /** Linear fade in from silence, measured from the start of the clip. */
+    val fadeInDuration: Ticks = Ticks.ZERO,
+    /** Linear fade to silence, measured back from the end of the clip. */
+    val fadeOutDuration: Ticks = Ticks.ZERO,
     val speed: Float = 1f,
     val enabled: Boolean = true,
     val label: String? = null,

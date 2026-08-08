@@ -3,6 +3,8 @@ package com.apexedits.core.media
 import com.apexedits.core.engine.edit.addKeyframe
 import com.apexedits.core.engine.edit.appendClip
 import com.apexedits.core.engine.edit.insertClipAt
+import com.apexedits.core.engine.edit.setClipFadeIn
+import com.apexedits.core.engine.edit.setClipPan
 import com.apexedits.core.engine.edit.setTrackMuted
 import com.apexedits.core.engine.edit.setTrackVisible
 import com.apexedits.core.engine.edit.splitClip
@@ -163,6 +165,26 @@ class CompositionBuilderTest {
     }
 
     @Test
+    fun `a fade vetoes transmuxing`() {
+        val (start, trackId, _) = openProject()
+        val clipId = start.track(trackId)!!.clips.single().id
+        val faded = start.setClipFadeIn(clipId, Ticks.ofSeconds(1.0))
+
+        // Same reasoning as volume automation: a fade with no keyframes on it
+        // would otherwise pass this check and then never play in the export.
+        assertFalse(CompositionBuilder.build(faded)!!.transmuxAudio)
+    }
+
+    @Test
+    fun `a pan vetoes transmuxing`() {
+        val (start, trackId, _) = openProject()
+        val clipId = start.track(trackId)!!.clips.single().id
+        val panned = start.setClipPan(clipId, -0.5f)
+
+        assertFalse(CompositionBuilder.build(panned)!!.transmuxAudio)
+    }
+
+    @Test
     fun `an audio track vetoes transmuxing`() {
         val (start, _, ids) = openProject()
         val audioTrack = start.audioTracks.first().id
@@ -226,6 +248,43 @@ class CompositionBuilderTest {
         val effects = CompositionBuilder.build(ducked)!!.sequences[0].editedMediaItems[0].effects
         assertEquals(1, effects.audioProcessors.size)
         assertTrue(effects.audioProcessors[0] is KeyframedGainProcessor)
+    }
+
+    @Test
+    fun `a fade adds the gain processor even with no volume keyframes`() {
+        val (start, trackId, _) = openProject()
+        val clipId = start.track(trackId)!!.clips.single().id
+        val faded = start.setClipFadeIn(clipId, Ticks.ofSeconds(1.0))
+
+        val effects = CompositionBuilder.build(faded)!!.sequences[0].editedMediaItems[0].effects
+        assertEquals(1, effects.audioProcessors.size)
+        assertTrue(effects.audioProcessors[0] is KeyframedGainProcessor)
+    }
+
+    @Test
+    fun `pan adds the pan processor`() {
+        val (start, trackId, _) = openProject()
+        val clipId = start.track(trackId)!!.clips.single().id
+        val panned = start.setClipPan(clipId, 0.5f)
+
+        val effects = CompositionBuilder.build(panned)!!.sequences[0].editedMediaItems[0].effects
+        assertEquals(1, effects.audioProcessors.size)
+        assertTrue(effects.audioProcessors[0] is PanProcessor)
+    }
+
+    @Test
+    fun `volume automation and pan together add both processors, gain first`() {
+        val (start, trackId, _) = openProject()
+        val clipId = start.track(trackId)!!.clips.single().id
+        val both = start
+            .addKeyframe(clipId, AnimatableProperty.VOLUME, Ticks.ZERO, 1f)
+            .addKeyframe(clipId, AnimatableProperty.VOLUME, Ticks.ofSeconds(2.0), 0f)
+            .setClipPan(clipId, -0.5f)
+
+        val effects = CompositionBuilder.build(both)!!.sequences[0].editedMediaItems[0].effects
+        assertEquals(2, effects.audioProcessors.size)
+        assertTrue(effects.audioProcessors[0] is KeyframedGainProcessor)
+        assertTrue(effects.audioProcessors[1] is PanProcessor)
     }
 
     @Test

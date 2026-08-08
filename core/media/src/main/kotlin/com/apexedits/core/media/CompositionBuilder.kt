@@ -6,7 +6,7 @@ import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
-import com.apexedits.core.model.AnimatableProperty
+import com.apexedits.core.engine.animation.hasAudioAutomation
 import com.apexedits.core.model.Clip
 import com.apexedits.core.model.MediaKind
 import com.apexedits.core.model.Project
@@ -55,11 +55,12 @@ object CompositionBuilder {
             // transmuxed when it can be, which is a large speed win on the
             // common case of untouched sound.
             //
-            // Volume automation has to veto that. Transmuxed audio is copied
-            // through without decoding, so the gain processor would never see a
-            // sample and the envelope would silently do nothing in the export
-            // while still being audible in the preview — precisely the
-            // preview/export divergence ADR 0004 exists to prevent.
+            // Volume automation, fades and pan all have to veto that. Transmuxed
+            // audio is copied through without decoding, so none of these audio
+            // processors would ever see a sample and would silently do nothing
+            // in the export while still being audible in the preview —
+            // precisely the preview/export divergence ADR 0004 exists to
+            // prevent.
             .setTransmuxAudio(canTransmuxAudio(project))
             .build()
     }
@@ -68,7 +69,7 @@ object CompositionBuilder {
         if (project.tracks.any { it.kind == TrackKind.AUDIO && it.clips.isNotEmpty() }) return false
         return project.tracks
             .flatMap { it.clips }
-            .none { it.track(AnimatableProperty.VOLUME).isAnimated }
+            .none { it.hasAudioAutomation || it.pan != 0f }
     }
 
     private fun buildSequence(project: Project, track: Track): EditedMediaItemSequence? {
@@ -165,8 +166,11 @@ object CompositionBuilder {
         }
 
         val audioProcessors = buildList {
-            if (audible && clip.track(AnimatableProperty.VOLUME).isAnimated) {
+            if (audible && clip.hasAudioAutomation) {
                 add(KeyframedGainProcessor(clip))
+            }
+            if (audible && clip.pan != 0f) {
+                add(PanProcessor(clip))
             }
         }
 

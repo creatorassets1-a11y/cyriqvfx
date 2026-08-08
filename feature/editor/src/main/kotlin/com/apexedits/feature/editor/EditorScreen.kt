@@ -166,6 +166,25 @@ fun EditorScreen(
                                         onClearProperty = viewModel::clearProperty,
                                     )
                                 }
+                                if (state.openPanel == EditorPanel.AUDIO) {
+                                    AudioPanel(
+                                        clip = clip,
+                                        playhead = state.playhead,
+                                        maxHeight = height,
+                                        onVolumeChange = { viewModel.setProperty(AnimatableProperty.VOLUME, it) },
+                                        onVolumeChangeFinished = {},
+                                        onToggleVolumeKeyframe = {
+                                            viewModel.toggleKeyframe(AnimatableProperty.VOLUME)
+                                        },
+                                        onClearVolumeAnimation = {
+                                            viewModel.clearProperty(AnimatableProperty.VOLUME)
+                                        },
+                                        onPanChange = viewModel::setSelectedPan,
+                                        onPanChangeFinished = {},
+                                        onFadeInChange = viewModel::setSelectedFadeIn,
+                                        onFadeOutChange = viewModel::setSelectedFadeOut,
+                                    )
+                                }
                             }
                             ContextualToolbar(
                                 hasSelection = state.hasSelection,
@@ -508,12 +527,13 @@ private fun ContextualToolbar(
             item {
                 ApexToolButton(
                     icon = Icons.Filled.VolumeUp,
-                    label = "Volume",
-                    tooltip = "Volume — Make the sound of this clip louder or quieter.",
-                    description = "Adjust the loudness of the selected clip's audio.",
-                    onClick = {},
-                    enabled = false,
-                    disabledReason = "Volume controls arrive in a later version of ApexEdits.",
+                    label = "Audio",
+                    tooltip = "Audio — Adjust this clip's volume, left/right balance, and fade " +
+                        "in or out of silence.",
+                    description = "Open audio controls for the selected clip: volume, which can " +
+                        "be animated with keyframes, plus balance and fades.",
+                    selected = openPanel == EditorPanel.AUDIO,
+                    onClick = { onTogglePanel(EditorPanel.AUDIO) },
                 )
             }
         }

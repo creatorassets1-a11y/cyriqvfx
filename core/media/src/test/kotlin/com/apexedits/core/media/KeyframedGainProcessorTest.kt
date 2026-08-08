@@ -4,6 +4,7 @@ import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import com.apexedits.core.engine.edit.addKeyframe
 import com.apexedits.core.engine.edit.appendClip
+import com.apexedits.core.engine.edit.setClipFadeIn
 import com.apexedits.core.engine.edit.setKeyframeEasing
 import com.apexedits.core.model.AnimatableProperty
 import com.apexedits.core.model.Clip
@@ -249,6 +250,35 @@ class KeyframedGainProcessorTest {
         } catch (expected: AudioProcessor.UnhandledAudioFormatException) {
             // as intended
         }
+    }
+
+    @Test
+    fun `a clip with only a fade, no volume keyframes, is still active`() {
+        val (start, clipId) = project()
+        val faded = start.setClipFadeIn(clipId, Ticks.ofSeconds(1.0)).clip(clipId)!!
+
+        val processor = KeyframedGainProcessor(faded)
+        processor.configure(format)
+
+        // Fades are not modelled as volume keyframes, so this must come from
+        // clip.hasAudioAutomation rather than from `track(VOLUME).isAnimated`.
+        assertTrue(processor.isActive)
+    }
+
+    @Test
+    fun `a fade-in clip ramps up from silence exactly like a fade-out ramps down`() {
+        val (start, clipId) = project()
+        val faded = start.setClipFadeIn(clipId, Ticks.ofSeconds(1.0)).clip(clipId)!!
+
+        val processor = KeyframedGainProcessor(faded)
+        processor.configure(format)
+        processor.flush()
+
+        processor.queueInput(pcm(SampleVideo.SAMPLE_RATE, 10_000))
+        val output = processor.output.shorts()
+
+        assertEquals(0, output.first().toInt())
+        assertTrue("head was ${output.last()}", kotlin.math.abs(output.last().toInt() - 10_000) < 20)
     }
 
     @Test

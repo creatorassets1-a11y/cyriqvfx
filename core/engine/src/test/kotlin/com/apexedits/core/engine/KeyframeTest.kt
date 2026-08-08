@@ -1,9 +1,11 @@
 package com.apexedits.core.engine
 
 import com.apexedits.core.engine.animation.evaluate
+import com.apexedits.core.engine.animation.fadeEnvelope
 import com.apexedits.core.engine.animation.solveBezier
 import com.apexedits.core.engine.animation.transformAt
 import com.apexedits.core.engine.animation.valueAt
+import com.apexedits.core.engine.animation.volumeAt
 import com.apexedits.core.engine.compose.composeFrame
 import com.apexedits.core.engine.edit.addKeyframe
 import com.apexedits.core.engine.edit.appendClip
@@ -12,6 +14,9 @@ import com.apexedits.core.engine.edit.keyframeTimelineTimes
 import com.apexedits.core.engine.edit.moveClip
 import com.apexedits.core.engine.edit.moveKeyframe
 import com.apexedits.core.engine.edit.removeKeyframe
+import com.apexedits.core.engine.edit.setClipFadeIn
+import com.apexedits.core.engine.edit.setClipFadeOut
+import com.apexedits.core.engine.edit.setClipPan
 import com.apexedits.core.engine.edit.setKeyframeEasing
 import com.apexedits.core.engine.edit.setPropertyValue
 import com.apexedits.core.engine.edit.setTrackLocked
@@ -412,5 +417,81 @@ class AnimatedCompositionTest {
         val clip = start.clip(clipId)!!
         // The common case must not allocate a copy per frame.
         assertSame(clip.transform, clip.transformAt(seconds(1.0)))
+    }
+}
+
+class AudioEnvelopeTest {
+
+    @Test
+    fun `no fades is transparent`() {
+        assertEquals(1f, fadeEnvelope(seconds(5.0), seconds(10.0), Ticks.ZERO, Ticks.ZERO), 0.0001f)
+    }
+
+    @Test
+    fun `fade in ramps from silence to full volume`() {
+        val duration = seconds(10.0)
+        val fadeIn = seconds(2.0)
+        assertEquals(0f, fadeEnvelope(Ticks.ZERO, duration, fadeIn, Ticks.ZERO), 0.001f)
+        assertEquals(0.5f, fadeEnvelope(seconds(1.0), duration, fadeIn, Ticks.ZERO), 0.001f)
+        assertEquals(1f, fadeEnvelope(seconds(2.0), duration, fadeIn, Ticks.ZERO), 0.001f)
+        assertEquals(1f, fadeEnvelope(seconds(9.0), duration, fadeIn, Ticks.ZERO), 0.001f)
+    }
+
+    @Test
+    fun `fade out ramps from full volume to silence`() {
+        val duration = seconds(10.0)
+        val fadeOut = seconds(2.0)
+        assertEquals(1f, fadeEnvelope(seconds(7.0), duration, Ticks.ZERO, fadeOut), 0.001f)
+        assertEquals(0.5f, fadeEnvelope(seconds(9.0), duration, Ticks.ZERO, fadeOut), 0.001f)
+        assertEquals(0f, fadeEnvelope(seconds(10.0), duration, Ticks.ZERO, fadeOut), 0.001f)
+    }
+
+    @Test
+    fun `overlapping fades scale down proportionally rather than one overriding the other`() {
+        // A 4 s clip with a 3 s fade in and a 3 s fade out: 6 s of fade requested
+        // on 4 s of clip. Both must shrink to 2 s each so they meet in the middle
+        // at full volume, rather than the fade-out silently winning at the point
+        // the fade-in would otherwise still be ramping up.
+        val duration = seconds(4.0)
+        val fadeIn = seconds(3.0)
+        val fadeOut = seconds(3.0)
+
+        assertEquals(0f, fadeEnvelope(Ticks.ZERO, duration, fadeIn, fadeOut), 0.001f)
+        assertEquals(1f, fadeEnvelope(seconds(2.0), duration, fadeIn, fadeOut), 0.01f)
+        assertEquals(0f, fadeEnvelope(seconds(4.0), duration, fadeIn, fadeOut), 0.001f)
+    }
+
+    @Test
+    fun `volumeAt folds the fade envelope through the animated or static volume`() {
+        val (start, clipId) = projectWithClip()
+        val faded = start.setClipFadeIn(clipId, seconds(2.0))
+        val clip = faded.clip(clipId)!!
+
+        assertEquals(0f, clip.volumeAt(clip.timelineStart), 0.001f)
+        assertEquals(1f, clip.volumeAt(clip.timelineStart + seconds(2.0)), 0.001f)
+    }
+
+    @Test
+    fun `fade durations are clamped to the clip's own length`() {
+        val (start, clipId) = projectWithClip()
+        val clip = start.clip(clipId)!!
+        val over = start.setClipFadeIn(clipId, clip.timelineDuration + seconds(100.0))
+        assertEquals(clip.timelineDuration, over.clip(clipId)!!.fadeInDuration)
+    }
+
+    @Test
+    fun `pan is clamped to -1 through 1`() {
+        val (start, clipId) = projectWithClip()
+        assertEquals(1f, start.setClipPan(clipId, 5f).clip(clipId)!!.pan, 0.001f)
+        assertEquals(-1f, start.setClipPan(clipId, -5f).clip(clipId)!!.pan, 0.001f)
+        assertEquals(0.3f, start.setClipPan(clipId, 0.3f).clip(clipId)!!.pan, 0.001f)
+    }
+
+    @Test
+    fun `audio property operations on a missing clip change nothing`() {
+        val (start, _) = projectWithClip()
+        assertSame(start, start.setClipPan("nope", 0.5f))
+        assertSame(start, start.setClipFadeIn("nope", seconds(1.0)))
+        assertSame(start, start.setClipFadeOut("nope", seconds(1.0)))
     }
 }

@@ -4,8 +4,8 @@ import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
-import com.apexedits.core.engine.animation.valueAt
-import com.apexedits.core.model.AnimatableProperty
+import com.apexedits.core.engine.animation.hasAudioAutomation
+import com.apexedits.core.engine.animation.volumeAt
 import com.apexedits.core.model.Clip
 import com.apexedits.core.model.Ticks
 import java.nio.ByteBuffer
@@ -63,9 +63,12 @@ class KeyframedGainProcessor(
      * An inactive processor is bypassed entirely by the pipeline, so a clip
      * without a volume envelope costs nothing — no per-sample multiply, no extra
      * buffer copy. The static case is already handled by the clip's own volume.
+     *
+     * "Automation" here covers both animated volume keyframes and a fade in or
+     * out, since both need the same per-sample gain that a flat multiply cannot
+     * give them.
      */
-    override fun isActive(): Boolean =
-        super.isActive() && clip.track(AnimatableProperty.VOLUME).isAnimated
+    override fun isActive(): Boolean = super.isActive() && clip.hasAudioAutomation
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         val position = inputBuffer.position()
@@ -88,7 +91,7 @@ class KeyframedGainProcessor(
             val timeInClip = Ticks.ofMicros(
                 startOffsetUs + frame * MICROS_PER_SECOND / sampleRate,
             )
-            val gain = clip.valueAt(AnimatableProperty.VOLUME, clip.timelineStart + timeInClip)
+            val gain = clip.volumeAt(clip.timelineStart + timeInClip)
 
             for (channel in 0 until channelCount) {
                 val sample = inputBuffer.getShort(offset)

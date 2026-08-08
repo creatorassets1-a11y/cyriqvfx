@@ -98,8 +98,9 @@ fun TransformPanel(
     }
 }
 
+/** Shared with [AudioPanel] for the Volume row, the one audio property that keyframes. */
 @Composable
-private fun PropertyRow(
+internal fun PropertyRow(
     property: AnimatableProperty,
     clip: Clip,
     playhead: Ticks,

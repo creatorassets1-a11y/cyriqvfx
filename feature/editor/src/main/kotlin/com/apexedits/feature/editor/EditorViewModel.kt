@@ -28,6 +28,9 @@ import com.apexedits.core.engine.edit.duplicateClip
 import com.apexedits.core.engine.edit.insertClipAt
 import com.apexedits.core.engine.edit.relinkMedia
 import com.apexedits.core.engine.edit.rippleDeleteClip
+import com.apexedits.core.engine.edit.setClipFadeIn
+import com.apexedits.core.engine.edit.setClipFadeOut
+import com.apexedits.core.engine.edit.setClipPan
 import com.apexedits.core.engine.edit.setClipSpeed
 import com.apexedits.core.engine.edit.setClipVolume
 import com.apexedits.core.engine.edit.setTrackLocked
@@ -197,6 +200,21 @@ class EditorViewModel(
     fun setSelectedVolume(volume: Float) {
         val clipId = _state.value.selectedClipId ?: return
         apply("Change volume", coalesce = true) { it.setClipVolume(clipId, volume) }
+    }
+
+    fun setSelectedPan(pan: Float) {
+        val clipId = _state.value.selectedClipId ?: return
+        apply("Change balance", coalesce = true) { it.setClipPan(clipId, pan) }
+    }
+
+    fun setSelectedFadeIn(duration: Ticks) {
+        val clipId = _state.value.selectedClipId ?: return
+        apply("Change fade in", coalesce = true) { it.setClipFadeIn(clipId, duration) }
+    }
+
+    fun setSelectedFadeOut(duration: Ticks) {
+        val clipId = _state.value.selectedClipId ?: return
+        apply("Change fade out", coalesce = true) { it.setClipFadeOut(clipId, duration) }
     }
 
     fun setTrackLocked(trackId: String, locked: Boolean) {
@@ -470,4 +488,4 @@ data class EditorUiState(
 }
 
 /** Which tool panel is open. Null means none, and the timeline gets the space. */
-enum class EditorPanel { TRANSFORM }
+enum class EditorPanel { TRANSFORM, AUDIO }

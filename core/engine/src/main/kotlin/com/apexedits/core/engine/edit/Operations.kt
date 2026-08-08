@@ -341,6 +341,36 @@ fun Project.setClipEnabled(clipId: String, enabled: Boolean): Project {
     return replaceTrack(track.id) { t -> t.replaceClip(clipId) { it.copy(enabled = enabled) } }
 }
 
+/** Sets stereo balance, clamped to -1 (full left) .. 1 (full right). */
+fun Project.setClipPan(clipId: String, pan: Float): Project {
+    val track = editableTrackOf(clipId) ?: return this
+    return replaceTrack(track.id) { t ->
+        t.replaceClip(clipId) { it.copy(pan = pan.coerceIn(-1f, 1f)) }
+    }
+}
+
+/**
+ * Sets the fade-in length, clamped to the clip's own timeline duration.
+ *
+ * A fade longer than the clip cannot be represented, so it is clamped rather
+ * than accepted and silently truncated at render time — the slider that set
+ * it should show the same value that will actually play.
+ */
+fun Project.setClipFadeIn(clipId: String, duration: Ticks): Project {
+    val track = editableTrackOf(clipId) ?: return this
+    val clip = clip(clipId) ?: return this
+    val clamped = duration.coerceIn(Ticks.ZERO, clip.timelineDuration)
+    return replaceTrack(track.id) { t -> t.replaceClip(clipId) { it.copy(fadeInDuration = clamped) } }
+}
+
+/** Sets the fade-out length, clamped to the clip's own timeline duration. */
+fun Project.setClipFadeOut(clipId: String, duration: Ticks): Project {
+    val track = editableTrackOf(clipId) ?: return this
+    val clip = clip(clipId) ?: return this
+    val clamped = duration.coerceIn(Ticks.ZERO, clip.timelineDuration)
+    return replaceTrack(track.id) { t -> t.replaceClip(clipId) { it.copy(fadeOutDuration = clamped) } }
+}
+
 // --- media -------------------------------------------------------------------
 
 fun Project.addMedia(ref: MediaRef): Project =

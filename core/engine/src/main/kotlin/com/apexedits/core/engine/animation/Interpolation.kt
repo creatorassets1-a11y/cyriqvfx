@@ -183,5 +183,48 @@ fun Clip.transformAt(time: Ticks): Transform {
     )
 }
 
-/** The clip's volume at [time], animated or static. */
-fun Clip.volumeAt(time: Ticks): Float = valueAt(AnimatableProperty.VOLUME, time)
+/**
+ * The clip's volume at [time]: the animated-or-static volume property, folded
+ * through its fade-in/fade-out envelope.
+ *
+ * Fades are modelled separately from the keyframe system rather than as
+ * implicit volume keyframes, because a fade is relative to the clip's edges —
+ * trimming the clip should carry the fade with the new edge, not leave it
+ * stranded at a fixed timeline position the way a keyframe would.
+ */
+fun Clip.volumeAt(time: Ticks): Float {
+    val base = valueAt(AnimatableProperty.VOLUME, time)
+    val envelope = fadeEnvelope(timeInClip(time), timelineDuration, fadeInDuration, fadeOutDuration)
+    return base * envelope
+}
+
+/**
+ * The linear fade envelope at [timeInClip], as a multiplier in 0..1.
+ *
+ * When [fadeIn] and [fadeOut] would overlap — a clip trimmed shorter than
+ * their combined length — both are scaled down proportionally so they still
+ * meet in the middle rather than one silently overriding the other, which is
+ * what evaluating them independently would do.
+ */
+fun fadeEnvelope(timeInClip: Ticks, clipDuration: Ticks, fadeIn: Ticks, fadeOut: Ticks): Float {
+    if (clipDuration.raw <= 0L) return 1f
+    if (fadeIn.raw <= 0L && fadeOut.raw <= 0L) return 1f
+
+    val total = fadeIn.raw + fadeOut.raw
+    val scale = if (total > clipDuration.raw) clipDuration.raw.toDouble() / total else 1.0
+    val effectiveIn = fadeIn.raw * scale
+    val effectiveOut = fadeOut.raw * scale
+
+    val t = timeInClip.raw.coerceIn(0L, clipDuration.raw).toDouble()
+    val fromEnd = clipDuration.raw - t
+
+    val inEnvelope = if (effectiveIn > 0.0) (t / effectiveIn).coerceIn(0.0, 1.0) else 1.0
+    val outEnvelope = if (effectiveOut > 0.0) (fromEnd / effectiveOut).coerceIn(0.0, 1.0) else 1.0
+
+    return (inEnvelope * outEnvelope).toFloat()
+}
+
+/** True when the clip's audio needs per-sample processing rather than a straight copy. */
+val Clip.hasAudioAutomation: Boolean
+    get() = track(AnimatableProperty.VOLUME).isAnimated ||
+        fadeInDuration.raw > 0L || fadeOutDuration.raw > 0L
