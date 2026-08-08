@@ -75,6 +75,31 @@ enum class AnimatableProperty(
         "Volume",
         "How loud this clip's sound is. Zero is silent.",
         1f, 0f, 2f, "",
+    ),
+    EXPOSURE(
+        "Exposure",
+        "Brightens or darkens the image, like adjusting a camera's exposure.",
+        0f, -2f, 2f, " EV",
+    ),
+    CONTRAST(
+        "Contrast",
+        "Pulls darks darker and lights lighter. Zero leaves the image unchanged.",
+        0f, -1f, 1f, "",
+    ),
+    SATURATION(
+        "Saturation",
+        "How vivid the colours are. Zero is black and white; higher is more vivid.",
+        1f, 0f, 2f, "",
+    ),
+    TEMPERATURE(
+        "Temperature",
+        "Shifts the image warmer (orange) or cooler (blue).",
+        0f, -1f, 1f, "",
+    ),
+    TINT(
+        "Tint",
+        "Shifts the image toward green or magenta.",
+        0f, -1f, 1f, "",
     );
 
     fun clamp(value: Float): Float = value.coerceIn(minValue, maxValue)

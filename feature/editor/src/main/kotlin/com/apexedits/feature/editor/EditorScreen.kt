@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.Speed
@@ -157,6 +158,17 @@ fun EditorScreen(
                             state.selectedClip?.let { clip ->
                                 if (state.openPanel == EditorPanel.TRANSFORM) {
                                     TransformPanel(
+                                        clip = clip,
+                                        playhead = state.playhead,
+                                        maxHeight = height,
+                                        onValueChange = viewModel::setProperty,
+                                        onValueChangeFinished = {},
+                                        onToggleKeyframe = viewModel::toggleKeyframe,
+                                        onClearProperty = viewModel::clearProperty,
+                                    )
+                                }
+                                if (state.openPanel == EditorPanel.COLOR) {
+                                    ColorPanel(
                                         clip = clip,
                                         playhead = state.playhead,
                                         maxHeight = height,
@@ -518,6 +530,19 @@ private fun ContextualToolbar(
                         "with keyframes.",
                     selected = openPanel == EditorPanel.TRANSFORM,
                     onClick = { onTogglePanel(EditorPanel.TRANSFORM) },
+                )
+            }
+            item {
+                ApexToolButton(
+                    icon = Icons.Filled.Palette,
+                    label = "Colour",
+                    tooltip = "Colour — Correct exposure, contrast, saturation, and colour. Tap " +
+                        "a diamond next to any setting to animate it over time.",
+                    description = "Open colour correction controls for the selected clip: " +
+                        "exposure, contrast, saturation, temperature, and tint, each of which " +
+                        "can be animated with keyframes.",
+                    selected = openPanel == EditorPanel.COLOR,
+                    onClick = { onTogglePanel(EditorPanel.COLOR) },
                 )
             }
             item {

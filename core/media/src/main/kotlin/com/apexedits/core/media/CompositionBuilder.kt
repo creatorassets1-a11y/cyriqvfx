@@ -158,6 +158,11 @@ object CompositionBuilder {
                     ),
                 )
             }
+            // Colour before alpha: correcting a colour that is about to be
+            // faded out is pointless work on every frame of the fade.
+            if (track.kind == TrackKind.VIDEO && KeyframedColorMatrix.isNeeded(clip)) {
+                add(KeyframedColorMatrix(clip))
+            }
             // Alpha last, so it scales the transformed frame rather than being
             // resampled by the geometry pass afterwards.
             if (track.kind == TrackKind.VIDEO && KeyframedAlphaEffect.isNeeded(clip)) {

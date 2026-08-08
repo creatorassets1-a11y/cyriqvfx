@@ -209,6 +209,12 @@ private fun AnimatableProperty.format(value: Float): String = when (this) {
         "${(value * 100).roundToInt()}%"
     AnimatableProperty.VOLUME ->
         "${(value * 100).roundToInt()}%"
+    AnimatableProperty.EXPOSURE ->
+        (if (value >= 0f) "+" else "") + "${(value * 100).roundToInt() / 100f} EV"
+    AnimatableProperty.CONTRAST, AnimatableProperty.TEMPERATURE, AnimatableProperty.TINT ->
+        (if (value > 0f) "+" else "") + "${(value * 100).roundToInt()}"
+    AnimatableProperty.SATURATION ->
+        "${(value * 100).roundToInt()}%"
 }
 
 /** The properties the Transform panel offers, in the order editors expect them. */

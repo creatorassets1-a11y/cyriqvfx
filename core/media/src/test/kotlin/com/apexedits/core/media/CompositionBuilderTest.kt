@@ -238,6 +238,31 @@ class CompositionBuilderTest {
     }
 
     @Test
+    fun `a colour adjustment adds the colour matrix effect between geometry and alpha`() {
+        val (start, trackId, _) = openProject()
+        val clipId = start.track(trackId)!!.clips.single().id
+        val graded = start
+            .addKeyframe(clipId, AnimatableProperty.SCALE_X, Ticks.ZERO, 1f)
+            .addKeyframe(clipId, AnimatableProperty.SCALE_X, Ticks.ofSeconds(2.0), 2f)
+            .addKeyframe(clipId, AnimatableProperty.OPACITY, Ticks.ZERO, 1f)
+            .addKeyframe(clipId, AnimatableProperty.OPACITY, Ticks.ofSeconds(2.0), 0f)
+            .addKeyframe(clipId, AnimatableProperty.CONTRAST, Ticks.ZERO, 0.5f)
+
+        val effects = CompositionBuilder.build(graded)!!.sequences[0].editedMediaItems[0].effects
+        assertEquals(3, effects.videoEffects.size)
+        assertTrue(effects.videoEffects[0] is KeyframedTransformation)
+        assertTrue(effects.videoEffects[1] is KeyframedColorMatrix)
+        assertTrue(effects.videoEffects[2] is KeyframedAlphaEffect)
+    }
+
+    @Test
+    fun `an untouched colour adjustment adds no effect`() {
+        val (project, _, _) = openProject()
+        val effects = CompositionBuilder.build(project)!!.sequences[0].editedMediaItems[0].effects
+        assertTrue(effects.videoEffects.none { it is KeyframedColorMatrix })
+    }
+
+    @Test
     fun `volume automation adds the gain processor`() {
         val (start, trackId, _) = openProject()
         val clipId = start.track(trackId)!!.clips.single().id

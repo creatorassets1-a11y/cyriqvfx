@@ -135,6 +135,7 @@ data class Clip(
     val sourceIn: Ticks,
     val sourceOut: Ticks,
     val transform: Transform = Transform(),
+    val colorAdjustment: ColorAdjustment = ColorAdjustment(),
     val volume: Float = 1f,
     /** Stereo balance, -1 (full left) to 1 (full right). 0 is centred. Not animatable. */
     val pan: Float = 0f,
@@ -191,6 +192,11 @@ data class Clip(
         AnimatableProperty.ROTATION -> transform.rotationDegrees
         AnimatableProperty.OPACITY -> transform.opacity
         AnimatableProperty.VOLUME -> volume
+        AnimatableProperty.EXPOSURE -> colorAdjustment.exposure
+        AnimatableProperty.CONTRAST -> colorAdjustment.contrast
+        AnimatableProperty.SATURATION -> colorAdjustment.saturation
+        AnimatableProperty.TEMPERATURE -> colorAdjustment.temperature
+        AnimatableProperty.TINT -> colorAdjustment.tint
     }
 
     /** Replaces a property's static value, leaving any animation on it alone. */
@@ -204,8 +210,34 @@ data class Clip(
             AnimatableProperty.ROTATION -> copy(transform = transform.copy(rotationDegrees = clamped))
             AnimatableProperty.OPACITY -> copy(transform = transform.copy(opacity = clamped))
             AnimatableProperty.VOLUME -> copy(volume = clamped)
+            AnimatableProperty.EXPOSURE -> copy(colorAdjustment = colorAdjustment.copy(exposure = clamped))
+            AnimatableProperty.CONTRAST -> copy(colorAdjustment = colorAdjustment.copy(contrast = clamped))
+            AnimatableProperty.SATURATION -> copy(colorAdjustment = colorAdjustment.copy(saturation = clamped))
+            AnimatableProperty.TEMPERATURE -> copy(colorAdjustment = colorAdjustment.copy(temperature = clamped))
+            AnimatableProperty.TINT -> copy(colorAdjustment = colorAdjustment.copy(tint = clamped))
         }
     }
+}
+
+/**
+ * Basic colour correction for a clip.
+ *
+ * Deliberately simple — exposure, contrast, saturation, and an approximate
+ * warm/cool + green/magenta shift — rather than a full grading tool with
+ * curves, wheels, and LUTs. Each field mirrors an [AnimatableProperty], so it
+ * can hold either a static value or be driven by keyframes exactly like
+ * [Transform] and volume are.
+ */
+@Serializable
+data class ColorAdjustment(
+    val exposure: Float = 0f,
+    val contrast: Float = 0f,
+    val saturation: Float = 1f,
+    val temperature: Float = 0f,
+    val tint: Float = 0f,
+) {
+    val isIdentity: Boolean
+        get() = exposure == 0f && contrast == 0f && saturation == 1f && temperature == 0f && tint == 0f
 }
 
 /** Colour tags for organising a busy timeline. Names, not just swatches. */
