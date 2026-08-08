@@ -1,5 +1,8 @@
 package com.apexedits.feature.editor
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,24 +33,34 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.apexedits.core.designsystem.ApexTrackToggle
 import com.apexedits.core.designsystem.overflowSentinel
 import com.apexedits.core.engine.edit.keyframeTimelineTimes
+import com.apexedits.core.media.ThumbnailCache
+import com.apexedits.core.media.WaveformExtractor
 import com.apexedits.core.model.Clip
 import com.apexedits.core.model.ColorTag
+import com.apexedits.core.model.MediaRef
 import com.apexedits.core.model.Project
 import com.apexedits.core.model.Ticks
 import com.apexedits.core.model.Track
@@ -87,6 +100,12 @@ fun Timeline(
     val horizontalScroll = rememberScrollState()
     val verticalScroll = rememberScrollState()
     val density = LocalDensity.current
+    val context = LocalContext.current
+    // One cache per screen instance, not per clip: extraction is expensive and
+    // clips share media, so every clip drawn from the same source shares the
+    // same decoded frames and waveform.
+    val thumbnailCache = remember(context) { ThumbnailCache(context) }
+    val waveformExtractor = remember(context) { WaveformExtractor(context) }
 
     Row(modifier = modifier.fillMaxSize().clipToBounds()) {
         // --- pinned headers ---
@@ -156,6 +175,8 @@ fun Timeline(
                         contentWidth = contentWidth,
                         selectedClipId = selectedClipId,
                         onSelectClip = onSelectClip,
+                        thumbnailCache = thumbnailCache,
+                        waveformExtractor = waveformExtractor,
                     )
                 }
             }
@@ -220,9 +241,11 @@ private fun TrackLane(
     track: Track,
     project: Project,
     pixelsPerSecond: Float,
-    contentWidth: androidx.compose.ui.unit.Dp,
+    contentWidth: Dp,
     selectedClipId: String?,
     onSelectClip: (String?) -> Unit,
+    thumbnailCache: ThumbnailCache,
+    waveformExtractor: WaveformExtractor,
 ) {
     Box(
         modifier = Modifier
@@ -232,13 +255,17 @@ private fun TrackLane(
             .clickable { onSelectClip(null) },
     ) {
         track.ordered.forEach { clip ->
+            val media = project.mediaRef(clip.mediaId)
             ClipBlock(
                 clip = clip,
                 track = track,
-                label = project.mediaRef(clip.mediaId)?.displayName ?: clip.label.orEmpty(),
+                media = media,
+                label = media?.displayName ?: clip.label.orEmpty(),
                 pixelsPerSecond = pixelsPerSecond,
                 selected = clip.id == selectedClipId,
                 onSelect = { onSelectClip(clip.id) },
+                thumbnailCache = thumbnailCache,
+                waveformExtractor = waveformExtractor,
             )
         }
     }
@@ -248,10 +275,13 @@ private fun TrackLane(
 private fun ClipBlock(
     clip: Clip,
     track: Track,
+    media: MediaRef?,
     label: String,
     pixelsPerSecond: Float,
     selected: Boolean,
     onSelect: () -> Unit,
+    thumbnailCache: ThumbnailCache,
+    waveformExtractor: WaveformExtractor,
 ) {
     val density = LocalDensity.current
     val startDp = with(density) { (clip.timelineStart.toSeconds() * pixelsPerSecond).toFloat().toDp() }
@@ -295,12 +325,37 @@ private fun ClipBlock(
             .clipToBounds(),
         contentAlignment = Alignment.CenterStart,
     ) {
+        // Drawn first so the label and keyframe diamonds layer on top of it
+        // rather than under it — a thumbnail behind unreadable text would
+        // defeat the point of the label.
+        if (media != null && media.available) {
+            if (track.kind == TrackKind.VIDEO) {
+                VideoThumbnailStrip(
+                    clip = clip,
+                    media = media,
+                    widthDp = widthDp,
+                    thumbnailCache = thumbnailCache,
+                )
+            } else {
+                AudioWaveform(
+                    clip = clip,
+                    media = media,
+                    widthDp = widthDp,
+                    waveformExtractor = waveformExtractor,
+                )
+            }
+        }
+
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 6.dp),
+            modifier = Modifier
+                .padding(horizontal = 6.dp)
+                // The strip behind it can be any brightness, so the label gets
+                // a scrim rather than risking unreadable text on a bright frame.
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f), RoundedCornerShape(3.dp)),
         )
 
         // Animation points, drawn along the bottom of the clip so they never
@@ -308,6 +363,93 @@ private fun ClipBlock(
         // keyframes at once turns a busy timeline into confetti.
         if (selected && clip.hasAnimation) {
             KeyframeMarkers(clip = clip, pixelsPerSecond = pixelsPerSecond)
+        }
+    }
+}
+
+/**
+ * A strip of frames sampled evenly across the clip's source window.
+ *
+ * One slot roughly every [THUMBNAIL_SLOT_WIDTH] rather than one per pixel: a
+ * `MediaMetadataRetriever` seek costs tens of milliseconds, so the strip asks
+ * for only as many frames as are actually distinguishable at the clip's
+ * current on-screen width.
+ */
+@Composable
+private fun BoxScope.VideoThumbnailStrip(
+    clip: Clip,
+    media: MediaRef,
+    widthDp: Dp,
+    thumbnailCache: ThumbnailCache,
+) {
+    val density = LocalDensity.current
+    val slotCount = with(density) { (widthDp.toPx() / THUMBNAIL_SLOT_WIDTH_PX) }
+        .toInt()
+        .coerceIn(1, MAX_THUMBNAIL_SLOTS)
+
+    Row(modifier = Modifier.matchParentSize().clipToBounds()) {
+        for (slot in 0 until slotCount) {
+            // Sampled at the middle of each slot's share of the clip, not the
+            // start: the middle frame is the one that best represents what a
+            // viewer sees while that slot is on screen during playback.
+            val fraction = (slot + 0.5f) / slotCount
+            val sourceTime = remember(clip, fraction) {
+                val offsetInClip = Ticks((clip.timelineDuration.raw * fraction).toLong())
+                clip.sourceTimeAt(clip.timelineStart + offsetInClip)
+            }
+            val bitmap by produceState<Bitmap?>(initialValue = null, media.uri, sourceTime.raw) {
+                value = thumbnailCache.frameAt(media.uri, sourceTime)
+            }
+
+            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                bitmap?.let {
+                    Image(
+                        bitmap = it.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.matchParentSize(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Peak-amplitude bars for the clip's audio, decoded once per (source,
+ * resolution) and cached — see [WaveformExtractor].
+ */
+@Composable
+private fun BoxScope.AudioWaveform(
+    clip: Clip,
+    media: MediaRef,
+    widthDp: Dp,
+    waveformExtractor: WaveformExtractor,
+) {
+    val density = LocalDensity.current
+    val bucketCount = with(density) { (widthDp.toPx() / WAVEFORM_BAR_SPACING_PX) }
+        .toInt()
+        .coerceIn(1, MAX_WAVEFORM_BUCKETS)
+
+    val peaks by produceState<FloatArray?>(initialValue = null, media.uri, bucketCount) {
+        value = waveformExtractor.peaks(media.uri, bucketCount)
+    }
+    val barColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
+
+    peaks?.let { bars ->
+        Canvas(modifier = Modifier.matchParentSize().padding(horizontal = 4.dp)) {
+            if (bars.isEmpty()) return@Canvas
+            val barWidth = size.width / bars.size
+            bars.forEachIndexed { index, peak ->
+                // A silent bar still draws a hairline: a gap would read as
+                // "no waveform loaded yet" rather than "this part is quiet".
+                val barHeight = (size.height * peak).coerceAtLeast(2f)
+                drawRect(
+                    color = barColor,
+                    topLeft = Offset(index * barWidth, (size.height - barHeight) / 2f),
+                    size = Size((barWidth * 0.7f).coerceAtLeast(1f), barHeight),
+                )
+            }
         }
     }
 }
@@ -342,7 +484,7 @@ private fun BoxScope.KeyframeMarkers(clip: Clip, pixelsPerSecond: Float) {
 private fun TimeRuler(
     project: Project,
     pixelsPerSecond: Float,
-    contentWidth: androidx.compose.ui.unit.Dp,
+    contentWidth: Dp,
     onSeek: (Float) -> Unit,
     onMarkerClick: (String) -> Unit,
 ) {
@@ -466,3 +608,10 @@ private const val MAX_PIXELS_PER_SECOND = 1_200f
 
 private const val MIN_CLIP_WIDTH_PX = 8f
 private const val MIN_CONTENT_WIDTH_PX = 600f
+
+/** Roughly one thumbnail per finger-width, so a strip never asks for more frames than are distinguishable. */
+private const val THUMBNAIL_SLOT_WIDTH_PX = 64f
+private const val MAX_THUMBNAIL_SLOTS = 40
+
+private const val WAVEFORM_BAR_SPACING_PX = 6f
+private const val MAX_WAVEFORM_BUCKETS = 300

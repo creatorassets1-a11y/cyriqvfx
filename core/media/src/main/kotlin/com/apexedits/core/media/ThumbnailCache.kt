@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.util.LruCache
 import com.apexedits.core.model.Ticks
 import kotlinx.coroutines.CoroutineDispatcher
@@ -78,12 +79,21 @@ class ThumbnailCache(
             // decoded at a keyframe, so it costs a seek instead of a seek plus
             // decoding every frame up to the target. For a thumbnail strip a few
             // frames of imprecision is invisible and the speed difference is not.
-            retriever.getScaledFrameAtTime(
-                atMs * 1000L,
-                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                THUMBNAIL_WIDTH,
-                THUMBNAIL_HEIGHT,
-            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                retriever.getScaledFrameAtTime(
+                    atMs * 1000L,
+                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    THUMBNAIL_WIDTH,
+                    THUMBNAIL_HEIGHT,
+                )
+            } else {
+                // getScaledFrameAtTime needs API 27. Below that, decode the frame
+                // at full source resolution and scale it down by hand — slower,
+                // but the PRD's minimum API is 24 and a thumbnail strip still has
+                // to work there.
+                retriever.getFrameAtTime(atMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    ?.let { Bitmap.createScaledBitmap(it, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, true) }
+            }
         } catch (error: Exception) {
             null
         } finally {
