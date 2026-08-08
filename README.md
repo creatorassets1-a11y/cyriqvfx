@@ -12,7 +12,7 @@ animation, audio, speed, and basic colour correction, working and under test.
 **Built and building.** A real Android app that assembles, installs and runs:
 
 - A frame-accurate edit engine — timeline model, split, trim, ripple, move,
-  duplicate, deep undo, markers — as pure Kotlin, with 259 unit tests across
+  duplicate, deep undo, markers — as pure Kotlin, with 266 unit tests across
   the core modules, including the persistence layer under Robolectric.
 - Keyframe animation for position, scale, rotation, opacity, volume, and
   **exposure/contrast/saturation/temperature/tint**: easing presets, custom
@@ -56,7 +56,7 @@ render contract, and the two UI guarantees the PRD is most specific about.
 ## Building
 
 ```bash
-./gradlew test              # 259 unit tests (Kotlin) + 84 C++ host tests via :core:nativeengine:hostTest
+./gradlew test              # 266 unit tests (Kotlin) + 84 C++ host tests via :core:nativeengine:hostTest
 ./gradlew test -Papex.sampleVideo=/path/to/clip.mp4   # also check the fixture against real media
 ./gradlew :app:lintDebug
 ./gradlew assembleDebug     # → app/build/outputs/apk/debug/app-debug.apk (~24 MB)
@@ -117,6 +117,19 @@ conversion costing 28 ms of animation drift, and a composition that threw
 whenever a track's first clip did not start at zero.
 
 **Research before code, for the highest-risk feature.** Background removal is the PRD's hardest requirement, and the two best published video matting systems turned out to be unshippable in an MIT app — RVM is GPL-3.0, MatAnyone is non-commercial-only. That is recorded in [`docs/research/01-video-matting-2026.md`](docs/research/01-video-matting-2026.md) rather than discovered after building around them.
+
+**UI interactions are driven, not just described.** There is no emulator in this
+build environment, but there is Robolectric's native graphics pipeline, which
+runs Compose's real layout, gesture-detection and semantics code on the JVM.
+`ApexToolButtonSizeTest` lays out a real button and measures its rendered dp
+rather than trusting the source numbers; `TimelineScrubTest` performs an
+actual simulated touch-drag on the ruler and asserts what `onSeek` receives at
+every step; `PreviewPaneTest` taps the transport button with a real (fake-media)
+Media3 `Player` and asserts the callback fires and the label/description track
+play state. This is how a reported "the play button doesn't work" or "I can't
+drag the playhead" gets a regression test instead of a plausible-sounding fix —
+still no substitute for a real device, but a real gap closed between "compiles"
+and "believed to work."
 
 **No `INTERNET` permission.** The offline and privacy claims are verifiable from
 the built APK rather than from a policy document — the app has no network egress
