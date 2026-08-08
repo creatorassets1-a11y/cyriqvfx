@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Project documents are backed up; generated caches are not. Proxies and
+    thumbnails rebuild from the source media in seconds and would otherwise make
+    a backup many times larger than it needs to be.
+-->
+<full-backup-content>
+    <include domain="database" path="apexedits-projects.db" />
+    <include domain="file" path="projects/" />
+    <exclude domain="file" path="projects/proxies/" />
+    <exclude domain="file" path="projects/thumbs/" />
+</full-backup-content>

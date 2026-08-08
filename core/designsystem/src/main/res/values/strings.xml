@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Tool copy.
+
+    Every interactive tool in ApexEdits owns three strings, and the naming
+    convention is load-bearing rather than decorative:
+
+        tool_<id>_label        short text under the icon
+        tool_<id>_tooltip      plain-language explanation shown on long press
+        tool_<id>_description  full TalkBack description: the action and its result
+
+    ToolCopyAuditTest reads this file directly and fails the build if any tool is
+    missing one of the three, if a description is too short to explain anything,
+    or if a label is one of the vague words the PRD bans ("Tool", "FX", "More").
+
+    Tooltips are written for someone who has never edited video before. That is
+    the standard the PRD sets, and it is why they say what a control *does to
+    your video* rather than restating its name.
+-->
+<resources>
+
+    <!-- ===== Timeline editing ===== -->
+
+    <string name="tool_split_label">Split</string>
+    <string name="tool_split_tooltip">Split Clip — Cuts the selected clip into two separate pieces at the playhead position.</string>
+    <string name="tool_split_description">Split the currently selected clip into two clips at the current playhead. The right half becomes a new clip.</string>
+
+    <string name="tool_delete_label">Delete</string>
+    <string name="tool_delete_tooltip">Delete Clip — Removes the selected clip and leaves an empty gap where it was.</string>
+    <string name="tool_delete_description">Delete the selected clip from the timeline. The space it occupied stays empty; other clips do not move.</string>
+
+    <string name="tool_ripple_delete_label">Delete and Close</string>
+    <string name="tool_ripple_delete_tooltip">Delete and Close Gap — Removes the selected clip and slides everything after it back so no empty space is left.</string>
+    <string name="tool_ripple_delete_description">Delete the selected clip and move all later clips on the same track earlier by its length, leaving no gap.</string>
+
+    <string name="tool_duplicate_label">Duplicate</string>
+    <string name="tool_duplicate_tooltip">Duplicate Clip — Makes an identical copy of the selected clip and places it immediately after the original.</string>
+    <string name="tool_duplicate_description">Create a copy of the selected clip with the same settings and place it directly after the original on the same track.</string>
+
+    <string name="tool_trim_label">Trim</string>
+    <string name="tool_trim_tooltip">Trim Clip — Drag either end of a clip to change where it starts or stops without moving it on the timeline.</string>
+    <string name="tool_trim_description">Trim the selected clip. Drag the left edge to change where it begins, or the right edge to change where it ends.</string>
+
+    <string name="tool_speed_label">Speed</string>
+    <string name="tool_speed_tooltip">Speed Controls — Change how fast or slow the clip plays. Faster makes it shorter; slower makes it longer.</string>
+    <string name="tool_speed_description">Change the playback speed of the selected clip between 0.1 times and 100 times. The clip length on the timeline changes to match.</string>
+
+    <string name="tool_volume_label">Volume</string>
+    <string name="tool_volume_tooltip">Volume — Make the sound of this clip louder or quieter, or silence it completely.</string>
+    <string name="tool_volume_description">Adjust the loudness of the selected clip\'s audio. Setting it to zero silences this clip without affecting others.</string>
+
+    <string name="tool_transform_label">Transform</string>
+    <string name="tool_transform_tooltip">Transform — Move, resize, rotate, or flip the picture inside the frame.</string>
+    <string name="tool_transform_description">Open transform controls to change the position, scale, rotation, opacity, and flip of the selected clip.</string>
+
+    <!-- ===== Timeline navigation ===== -->
+
+    <string name="tool_play_label">Play</string>
+    <string name="tool_play_tooltip">Play — Starts playing your video from the playhead position.</string>
+    <string name="tool_play_description">Start playback from the current playhead position.</string>
+
+    <string name="tool_pause_label">Pause</string>
+    <string name="tool_pause_tooltip">Pause — Stops playback and leaves the playhead where it is.</string>
+    <string name="tool_pause_description">Pause playback. The playhead stays at its current position so you can continue from there.</string>
+
+    <string name="tool_zoom_in_label">Zoom In</string>
+    <string name="tool_zoom_in_tooltip">Zoom Timeline In — Makes clips look longer so you can edit more precisely, frame by frame.</string>
+    <string name="tool_zoom_in_description">Zoom into the timeline. Clips are drawn wider so you can position edits more precisely. Does not change your video.</string>
+
+    <string name="tool_zoom_out_label">Zoom Out</string>
+    <string name="tool_zoom_out_tooltip">Zoom Timeline Out — Makes clips look shorter so you can see more of your project at once.</string>
+    <string name="tool_zoom_out_description">Zoom out of the timeline so more of the project is visible at once. Does not change your video.</string>
+
+    <string name="tool_snap_label">Snap</string>
+    <string name="tool_snap_tooltip">Snap to Edges — When on, clips automatically line up with other clips, markers, and the playhead so there are no accidental gaps.</string>
+    <string name="tool_snap_description">Turn edge snapping on or off. When on, clips you drag jump to line up neatly with nearby clips, markers, and the playhead.</string>
+
+    <string name="tool_undo_label">Undo</string>
+    <string name="tool_undo_tooltip">Undo — Reverses your last change. You can undo many steps in a row.</string>
+    <string name="tool_undo_description">Undo the most recent change to your project. Repeating this steps further back through your edit history.</string>
+
+    <string name="tool_redo_label">Redo</string>
+    <string name="tool_redo_tooltip">Redo — Puts back a change you just undid.</string>
+    <string name="tool_redo_description">Redo the change that was most recently undone. Available until you make a new edit.</string>
+
+    <!-- ===== Media and tracks ===== -->
+
+    <string name="tool_import_label">Add Media</string>
+    <string name="tool_import_tooltip">Add Media — Brings video, photos, or music from your device into this project.</string>
+    <string name="tool_import_description">Open your device storage to choose video, photo, or audio files to add to this project. Nothing is uploaded anywhere.</string>
+
+    <string name="tool_add_track_label">Add Track</string>
+    <string name="tool_add_track_tooltip">Add Track — Creates a new empty layer. Video tracks stack on top of each other; audio tracks play together.</string>
+    <string name="tool_add_track_description">Add a new empty video or audio track to the timeline so you can layer more clips.</string>
+
+    <string name="tool_track_lock_label">Lock</string>
+    <string name="tool_track_lock_tooltip">Lock Track — Protects everything on this track so it cannot be moved or changed by accident.</string>
+    <string name="tool_track_lock_description">Lock or unlock this track. While locked, clips on it cannot be moved, trimmed, or deleted.</string>
+
+    <string name="tool_track_mute_label">Mute</string>
+    <string name="tool_track_mute_tooltip">Mute Track — Silences this track so you cannot hear it, without deleting anything.</string>
+    <string name="tool_track_mute_description">Mute or unmute this track. Muting silences it during playback and in the exported video, but keeps the clips.</string>
+
+    <string name="tool_track_solo_label">Solo</string>
+    <string name="tool_track_solo_tooltip">Solo Track — Plays only this track and silences all the others, so you can hear it on its own.</string>
+    <string name="tool_track_solo_description">Solo this track. Only soloed tracks are heard; other tracks are silenced without changing their own mute settings.</string>
+
+    <string name="tool_track_visible_label">Show</string>
+    <string name="tool_track_visible_tooltip">Show or Hide Track — Hides this track from the preview and the exported video without deleting it.</string>
+    <string name="tool_track_visible_description">Show or hide this video track. A hidden track does not appear in the preview or in the exported video.</string>
+
+    <!-- ===== Export and project ===== -->
+
+    <string name="tool_export_label">Export</string>
+    <string name="tool_export_tooltip">Export Video — Turns your timeline into a finished video file saved on your device.</string>
+    <string name="tool_export_description">Open export settings to render your project into a finished video file and save it to your device gallery.</string>
+
+    <string name="tool_projects_label">Projects</string>
+    <string name="tool_projects_tooltip">Return to Projects — Goes back to your project list. Your work is saved automatically.</string>
+    <string name="tool_projects_description">Return to the project list. Any unsaved changes in this project are saved automatically before leaving.</string>
+
+    <string name="tool_settings_label">Settings</string>
+    <string name="tool_settings_tooltip">Settings — Change performance, storage, appearance, and accessibility options.</string>
+    <string name="tool_settings_description">Open app settings for performance, storage management, theme, accessibility, and licence information.</string>
+
+</resources>

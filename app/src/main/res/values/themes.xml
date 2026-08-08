@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        A bare platform theme. Colour, typography and shape all come from the
+        Compose theme in :core:designsystem; duplicating them in XML would give
+        two sources of truth that drift apart.
+    -->
+    <style name="Theme.ApexEdits" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

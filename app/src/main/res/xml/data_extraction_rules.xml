@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="database" path="apexedits-projects.db" />
+        <include domain="file" path="projects/" />
+        <exclude domain="file" path="projects/proxies/" />
+        <exclude domain="file" path="projects/thumbs/" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="database" path="apexedits-projects.db" />
+        <include domain="file" path="projects/" />
+    </device-transfer>
+</data-extraction-rules>

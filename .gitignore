@@ -1,7 +1,21 @@
-node_modules/
-dist/
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+.cxx/
+release/
+
+# IDE
+.idea/
+*.iml
 .DS_Store
+
+# Logs
 *.log
-.vite/
-coverage/
-dist-standalone/
