@@ -75,7 +75,8 @@ professional editing · **P3** captions and polish · **P4** hardening.
 | Multi-select | Modelled | P2 | `deleteClips` takes a collection |
 | Copy/paste attributes | Planned | P2 | — |
 | Deep undo/redo, persistent per project | Built | P1 | `history/History.kt`, 200 deep, drag-coalescing |
-| Playhead | Built | P1 | `Timeline.kt` |
+| Playhead | Built | P1 | `Timeline.kt`; drag-to-scrub on the ruler, not just tap |
+| Play / pause preview | Built | P1 | `PreviewPlayer` owned by `EditorViewModel`; button overlaid on the preview |
 | In/out points, loop playback | Planned | P2 | — |
 | Fullscreen preview | Planned | P2 | — |
 

@@ -6,8 +6,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -495,12 +497,25 @@ private fun TimeRuler(
             .height(RULER_HEIGHT)
             .background(MaterialTheme.colorScheme.surface)
             .pointerInput(contentWidth) {
-                detectTapGestures { offset ->
-                    onSeek((offset.x / size.width.toFloat()).coerceIn(0f, 1f))
+                // A plain `detectTapGestures` only fires on a stationary
+                // tap-and-release; it never sees a finger that moves, so
+                // dragging along the ruler to scrub did nothing. Handling the
+                // down event directly covers both: touching anywhere jumps
+                // the playhead there immediately (the tap case), and `drag`
+                // keeps tracking the same pointer for as long as it moves
+                // (the scrub case), rather than requiring a second gesture
+                // recogniser to take over mid-touch.
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    onSeek((down.position.x / size.width.toFloat()).coerceIn(0f, 1f))
+                    drag(down.id) { change ->
+                        change.consume()
+                        onSeek((change.position.x / size.width.toFloat()).coerceIn(0f, 1f))
+                    }
                 }
             }
             .semantics {
-                contentDescription = "Timeline ruler. Tap anywhere to move the playhead to that " +
+                contentDescription = "Timeline ruler. Tap or drag to move the playhead to that " +
                     "point in your video."
             },
     ) {
@@ -593,7 +608,9 @@ private fun formatSeconds(seconds: Double): String {
 private val TRACK_HEADER_WIDTH = 132.dp
 private val VIDEO_TRACK_HEIGHT = 56.dp
 private val AUDIO_TRACK_HEIGHT = 44.dp
-private val RULER_HEIGHT = 24.dp
+// Taller than the 24dp a pure timecode strip needs, so there is a comfortable
+// drag target for scrubbing rather than a sliver that is easy to miss.
+private val RULER_HEIGHT = 32.dp
 private val PLAYHEAD_WIDTH = 2.dp
 private val KEYFRAME_MARKER_SIZE = 8.dp
 private val MARKER_FLAG_WIDTH = 24.dp

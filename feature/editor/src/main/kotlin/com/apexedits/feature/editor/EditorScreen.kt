@@ -136,7 +136,16 @@ fun EditorScreen(
                             onExport = onExport,
                         )
                     },
-                    preview = { m -> PreviewPane(modifier = m, project = project) },
+                    preview = { m ->
+                        PreviewPane(
+                            modifier = m,
+                            project = project,
+                            player = viewModel.previewPlayerForSurface(),
+                            isPlaying = state.isPreviewPlaying,
+                            previewError = state.previewError,
+                            onTogglePlayPause = viewModel::togglePlayPause,
+                        )
+                    },
                     timeline = { m ->
                         Timeline(
                             modifier = m,

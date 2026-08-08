@@ -4,6 +4,8 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import com.apexedits.core.data.AutoSave
 import com.apexedits.core.data.DevicePreferences
 import com.apexedits.core.data.MediaImporter
@@ -37,6 +39,7 @@ import com.apexedits.core.engine.edit.setTrackLocked
 import com.apexedits.core.engine.edit.setTrackMuted
 import com.apexedits.core.engine.edit.splitAllTracksAt
 import com.apexedits.core.engine.history.History
+import com.apexedits.core.media.PreviewPlayer
 import com.apexedits.core.model.AnimatableProperty
 import com.apexedits.core.model.CountingIdSource
 import com.apexedits.core.model.IdSource
@@ -45,10 +48,12 @@ import com.apexedits.core.model.Project
 import com.apexedits.core.model.Ticks
 import com.apexedits.core.model.TrackKind
 import com.apexedits.core.model.createClip
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -61,6 +66,7 @@ import java.util.UUID
  * that changes the project without both happening, which is what keeps "deep
  * undo" and "never lose work" true as features are added.
  */
+@OptIn(UnstableApi::class)
 class EditorViewModel(
     application: Application,
     private val projectId: String,
@@ -72,6 +78,15 @@ class EditorViewModel(
     private val autoSave = AutoSave(store, viewModelScope)
     private val preferences = DevicePreferences(application)
 
+    /**
+     * Built once, for the life of this ViewModel — not per-composition, as an
+     * earlier version had it. Owning it here rather than inside `PreviewPane`
+     * is what makes play/pause and scrub-driven seeking reachable from the
+     * toolbar and the timeline instead of being sealed inside a composable
+     * with no way in.
+     */
+    private val previewPlayer = PreviewPlayer(application)
+
     private val ids: IdSource = CountingIdSource(System.currentTimeMillis())
 
     private val _state = MutableStateFlow(EditorUiState())
@@ -79,9 +94,34 @@ class EditorViewModel(
 
     private var history: History? = null
 
+    /** The underlying player, for `PreviewPane`'s `PlayerSurface`. */
+    fun previewPlayerForSurface(): Player = previewPlayer.player
+
     init {
         autoSave.start()
         load()
+
+        viewModelScope.launch {
+            previewPlayer.state.collect { previewState ->
+                _state.value = _state.value.copy(
+                    isPreviewPlaying = previewState.isPlaying,
+                    previewError = previewState.error,
+                )
+            }
+        }
+
+        // Drives the timeline playhead during playback. Polled rather than
+        // pushed because Media3 has no per-frame position callback; ~30 times
+        // a second is smooth enough for a scrubber indicator without costing
+        // anything when nothing is playing, since the loop is a no-op check.
+        viewModelScope.launch {
+            while (isActive) {
+                if (_state.value.isPreviewPlaying) {
+                    _state.value = _state.value.copy(playhead = previewPlayer.currentPosition())
+                }
+                delay(POSITION_POLL_INTERVAL_MS)
+            }
+        }
     }
 
     private fun load() {
@@ -112,6 +152,7 @@ class EditorViewModel(
                 missingMediaCount = refreshed.count { !it.available },
             )
             pendingRecovery = result.recovered
+            previewPlayer.setProject(project, keepPosition = Ticks.ZERO)
         }
     }
 
@@ -143,6 +184,10 @@ class EditorViewModel(
             redoLabel = current.redoLabel,
         )
         autoSave.record(current.present)
+        // Rebuilding the composition resets the player to frame zero; seeking
+        // back to where the playhead already was keeps an edit from visibly
+        // jumping the preview to the start of the timeline.
+        previewPlayer.setProject(current.present, keepPosition = _state.value.playhead)
     }
 
     fun undo() {
@@ -155,9 +200,24 @@ class EditorViewModel(
         publish()
     }
 
+    /**
+     * Moves the playhead, from a tap or a drag on the timeline ruler.
+     *
+     * Pauses playback first: a manual scrub is the user taking over from
+     * autoplay, and continuing to advance the position out from under a drag
+     * is what makes a scrubber feel like it is fighting the finger on it.
+     */
     fun seek(position: Ticks) {
         val duration = _state.value.project?.duration ?: Ticks.ZERO
-        _state.value = _state.value.copy(playhead = position.coerceIn(Ticks.ZERO, duration))
+        val clamped = position.coerceIn(Ticks.ZERO, duration)
+        previewPlayer.pause()
+        previewPlayer.seekTo(clamped)
+        _state.value = _state.value.copy(playhead = clamped)
+    }
+
+    /** The bottom-centre play/pause control on the preview. */
+    fun togglePlayPause() {
+        previewPlayer.togglePlayPause()
     }
 
     fun selectClip(clipId: String?) {
@@ -461,6 +521,12 @@ class EditorViewModel(
     override fun onCleared() {
         super.onCleared()
         viewModelScope.launch { autoSave.commit() }
+        previewPlayer.release()
+    }
+
+    private companion object {
+        /** ~30 times a second: smooth for a scrubber indicator, cheap when idle. */
+        const val POSITION_POLL_INTERVAL_MS = 33L
     }
 }
 
@@ -482,6 +548,8 @@ data class EditorUiState(
     val suppressWarningChecked: Boolean = false,
     val message: String? = null,
     val openPanel: EditorPanel? = null,
+    val isPreviewPlaying: Boolean = false,
+    val previewError: String? = null,
 ) {
     val selectedClip get() = selectedClipId?.let { project?.clip(it) }
     val hasSelection get() = selectedClip != null

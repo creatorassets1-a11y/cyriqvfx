@@ -54,9 +54,15 @@ import androidx.compose.ui.unit.dp
  * rather than a number each call site has to remember.
  */
 
-/** The PRD's minimum touch target; 56 dp is preferred for primary tools. */
+/**
+ * The PRD's minimum touch target. [PreferredToolSize] used to default to 56
+ * dp — comfortably above the floor, but visibly bulkier on screen than the
+ * mobile NLEs this app is meant to feel like, which sit at or close to the
+ * 48 dp minimum itself. Matching that keeps the toolbar dense without
+ * dropping below the accessibility requirement.
+ */
 val MinTouchTarget = 48.dp
-val PreferredToolSize = 56.dp
+val PreferredToolSize = 48.dp
 
 /**
  * A tool button: icon, always-visible label, long-press tooltip, full semantics.
@@ -120,14 +126,14 @@ fun ApexToolButton(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
             ) {
                 Icon(
                     imageVector = icon,
                     // The label and the semantics carry the meaning; repeating
                     // it on the icon would make TalkBack say everything twice.
                     contentDescription = null,
-                    modifier = Modifier.sizeIn(minWidth = 22.dp, minHeight = 22.dp),
+                    modifier = Modifier.sizeIn(minWidth = 20.dp, minHeight = 20.dp),
                 )
                 Text(
                     text = label,
@@ -137,7 +143,7 @@ fun ApexToolButton(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 2.dp).widthIn(max = 84.dp),
+                    modifier = Modifier.padding(top = 1.dp).widthIn(max = 76.dp),
                 )
             }
         }
@@ -159,8 +165,8 @@ fun ApexToolRow(
 ) {
     LazyRow(
         modifier = modifier.fillMaxWidth().overflowSentinel("ApexToolRow"),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         content = content,
     )

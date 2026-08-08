@@ -22,12 +22,22 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * The composition is rebuilt when the document changes, which is why the editor
  * calls [setProject] with a revision guard rather than on every recomposition.
+ *
+ * ### Why the player is built eagerly, not lazily
+ *
+ * An earlier version built the underlying `CompositionPlayer` lazily, inside
+ * [setProject]'s first call, and left [play] entirely unreachable from the UI.
+ * The combination was a preview that never painted a frame: `PlayerSurface`
+ * had nothing to attach to until the first edit, and even after that nothing
+ * ever called `seekTo` or `play`, so the surface stayed black no matter what
+ * was on the timeline. The player now exists for the whole life of this
+ * object, and [setProject] seeks to the caller's current playhead after
+ * preparing — Media3 renders the frame at a seek position as soon as it is
+ * ready, without needing playback to start, which is what makes a freshly
+ * opened project show its first frame instead of a black rectangle.
  */
 @UnstableApi
-class PreviewPlayer(private val context: Context) {
-
-    private var player: CompositionPlayer? = null
-    private var loadedRevision: Long = -1L
+class PreviewPlayer(context: Context) {
 
     private val _state = MutableStateFlow(PreviewState())
     val state: StateFlow<PreviewState> = _state.asStateFlow()
@@ -45,6 +55,9 @@ class PreviewPlayer(private val context: Context) {
         val error: String? = null,
     )
 
+    // Declared before compositionPlayer, which references it during its own
+    // initialisation — property initialisers run in declaration order, so the
+    // reverse ordering would read an uninitialised listener.
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             _state.value = _state.value.copy(isPlaying = isPlaying)
@@ -63,73 +76,80 @@ class PreviewPlayer(private val context: Context) {
         }
     }
 
-    /** The underlying player, for the Compose `PlayerSurface`. */
-    fun playerOrNull(): Player? = player
+    private val compositionPlayer: CompositionPlayer = CompositionPlayer.Builder(context).build().also {
+        it.addListener(listener)
+    }
+    private var loadedRevision: Long = -1L
+
+    /** The underlying player, for the Compose `PlayerSurface`. Never null: built in the constructor. */
+    val player: Player get() = compositionPlayer
 
     /**
-     * Loads [project] if its revision differs from what is loaded.
+     * Loads [project] if its revision differs from what is loaded, then seeks
+     * to [keepPosition] so the surface shows that frame rather than resetting
+     * to the start of the timeline on every edit.
      *
      * Rebuilding a composition tears down and re-creates decoders, so doing it
      * per recomposition would make the preview stutter on every slider tick. The
      * revision counter only advances on a real change, which makes it a reliable
      * guard.
      */
-    fun setProject(project: Project) {
-        if (project.revision == loadedRevision && player != null) return
+    fun setProject(project: Project, keepPosition: Ticks = Ticks.ZERO) {
+        if (project.revision == loadedRevision) return
 
         val composition = CompositionBuilder.build(project)
         if (composition == null) {
-            release()
+            compositionPlayer.stop()
+            loadedRevision = project.revision
             _state.value = PreviewState(durationTicks = project.duration.raw)
             return
         }
 
-        val active = player ?: CompositionPlayer.Builder(context).build().also {
-            it.addListener(listener)
-            player = it
-        }
-
         runCatching {
-            active.setComposition(composition)
-            active.prepare()
+            compositionPlayer.setComposition(composition)
+            compositionPlayer.prepare()
+            // Without this, a freshly prepared player has nothing telling it to
+            // render anything: it sits ready, on frame zero of a surface with no
+            // draw call behind it, which is indistinguishable from a black
+            // screen. Seeking asks it to display the frame at this position the
+            // moment it can, independent of whether playback ever starts.
+            compositionPlayer.seekTo(keepPosition.toMillis())
         }.onFailure { error ->
             _state.value = _state.value.copy(error = error.message ?: "Preview could not be prepared")
         }
 
         loadedRevision = project.revision
-        _state.value = _state.value.copy(durationTicks = project.duration.raw, error = null)
+        _state.value = _state.value.copy(
+            durationTicks = project.duration.raw,
+            positionTicks = keepPosition.raw,
+            error = null,
+        )
     }
 
     fun play() {
-        player?.play()
+        compositionPlayer.play()
     }
 
     fun pause() {
-        player?.pause()
+        compositionPlayer.pause()
     }
 
     fun togglePlayPause() {
-        val active = player ?: return
-        if (active.isPlaying) active.pause() else active.play()
+        if (compositionPlayer.isPlaying) compositionPlayer.pause() else compositionPlayer.play()
     }
 
     /** Moves the playhead. Called continuously while scrubbing. */
     fun seekTo(position: Ticks) {
-        player?.seekTo(position.toMillis())
+        compositionPlayer.seekTo(position.toMillis())
         _state.value = _state.value.copy(positionTicks = position.raw)
     }
 
     /** Current playback position, for driving the playhead during playback. */
-    fun currentPosition(): Ticks {
-        val active = player ?: return Ticks.ZERO
-        return Ticks.ofMillis(active.currentPosition.coerceAtLeast(0L))
-    }
+    fun currentPosition(): Ticks = Ticks.ofMillis(compositionPlayer.currentPosition.coerceAtLeast(0L))
 
     fun release() {
-        player?.removeListener(listener)
-        player?.release()
-        player = null
-        loadedRevision = -1L
+        compositionPlayer.removeListener(listener)
+        compositionPlayer.release()
         _state.value = PreviewState()
     }
 }
