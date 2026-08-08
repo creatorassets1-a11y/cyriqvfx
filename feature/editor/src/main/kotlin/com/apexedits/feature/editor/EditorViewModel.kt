@@ -488,4 +488,4 @@ data class EditorUiState(
 }
 
 /** Which tool panel is open. Null means none, and the timeline gets the space. */
-enum class EditorPanel { TRANSFORM, AUDIO }
+enum class EditorPanel { TRANSFORM, AUDIO, SPEED }

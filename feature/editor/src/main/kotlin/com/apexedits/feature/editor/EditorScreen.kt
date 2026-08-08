@@ -166,6 +166,14 @@ fun EditorScreen(
                                         onClearProperty = viewModel::clearProperty,
                                     )
                                 }
+                                if (state.openPanel == EditorPanel.SPEED) {
+                                    SpeedPanel(
+                                        clip = clip,
+                                        maxHeight = height,
+                                        onSpeedChange = viewModel::setSelectedSpeed,
+                                        onSpeedChangeFinished = {},
+                                    )
+                                }
                                 if (state.openPanel == EditorPanel.AUDIO) {
                                     AudioPanel(
                                         clip = clip,
@@ -519,9 +527,8 @@ private fun ContextualToolbar(
                     tooltip = "Speed Controls — Change how fast or slow the clip plays.",
                     description = "Change the playback speed of the selected clip. The clip " +
                         "length on the timeline changes to match.",
-                    onClick = {},
-                    enabled = false,
-                    disabledReason = "Speed controls arrive in a later version of ApexEdits.",
+                    selected = openPanel == EditorPanel.SPEED,
+                    onClick = { onTogglePanel(EditorPanel.SPEED) },
                 )
             }
             item {
