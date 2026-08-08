@@ -2,18 +2,24 @@ package com.apexedits.core.engine
 
 import com.apexedits.core.engine.edit.MIN_CLIP_DURATION
 import com.apexedits.core.engine.edit.TrimEdge
+import com.apexedits.core.engine.edit.addMarker
 import com.apexedits.core.engine.edit.addTrack
 import com.apexedits.core.engine.edit.appendClip
 import com.apexedits.core.engine.edit.deleteClip
 import com.apexedits.core.engine.edit.duplicateClip
 import com.apexedits.core.engine.edit.moveClip
+import com.apexedits.core.engine.edit.moveMarker
 import com.apexedits.core.engine.edit.relinkMedia
+import com.apexedits.core.engine.edit.removeMarker
+import com.apexedits.core.engine.edit.renameMarker
 import com.apexedits.core.engine.edit.rippleDeleteClip
 import com.apexedits.core.engine.edit.setClipSpeed
+import com.apexedits.core.engine.edit.setMarkerColorTag
 import com.apexedits.core.engine.edit.setTrackLocked
 import com.apexedits.core.engine.edit.splitClip
 import com.apexedits.core.engine.edit.trimClip
 import com.apexedits.core.model.AspectRatio
+import com.apexedits.core.model.ColorTag
 import com.apexedits.core.model.CountingIdSource
 import com.apexedits.core.model.FrameRate
 import com.apexedits.core.model.MediaKind
@@ -312,5 +318,74 @@ class OperationsTest {
         assertEquals(2, clips.size)
         assertEquals(original.timelineEnd, clips[1].timelineStart)
         assertTrue(clips[0].id != clips[1].id)
+    }
+
+    // --- markers ---------------------------------------------------------
+
+    @Test
+    fun `markers are kept sorted by time however they are added`() {
+        val (project, ids) = projectWithOneClip()
+        val scrambled = project
+            .addMarker(ids, seconds(4.0), "D")
+            .addMarker(ids, seconds(1.0), "A")
+            .addMarker(ids, seconds(3.0), "C")
+            .addMarker(ids, seconds(2.0), "B")
+
+        assertEquals(listOf("A", "B", "C", "D"), scrambled.markers.map { it.name })
+    }
+
+    @Test
+    fun `a marker stays put when a clip moves, unlike a keyframe`() {
+        val (start, ids) = projectWithOneClip()
+        val clipId = start.videoTracks.first().clips.single().id
+        val marked = start.addMarker(ids, seconds(2.0), "Beat")
+
+        val moved = marked.moveClip(clipId, seconds(20.0))
+
+        // The marker names a point on the timeline, not a point in the clip, so
+        // moving the clip must not carry it along.
+        assertEquals(seconds(2.0), moved.markers.single().time)
+    }
+
+    @Test
+    fun `dragging a marker before zero is clamped to zero`() {
+        val (project, ids) = projectWithOneClip()
+        val marked = project.addMarker(ids, seconds(5.0))
+        val markerId = marked.markers.single().id
+
+        val dragged = marked.moveMarker(markerId, Ticks(-100))
+        assertEquals(Ticks.ZERO, dragged.markers.single().time)
+    }
+
+    @Test
+    fun `renaming updates the name and note without touching the time`() {
+        val (project, ids) = projectWithOneClip()
+        val marked = project.addMarker(ids, seconds(5.0), "Old", "old note")
+        val markerId = marked.markers.single().id
+
+        val renamed = marked.renameMarker(markerId, "New", "new note")
+        val marker = renamed.markers.single()
+        assertEquals("New", marker.name)
+        assertEquals("new note", marker.note)
+        assertEquals(seconds(5.0), marker.time)
+    }
+
+    @Test
+    fun `removing a marker leaves the others untouched`() {
+        val (project, ids) = projectWithOneClip()
+        val marked = project.addMarker(ids, seconds(1.0), "Keep").addMarker(ids, seconds(2.0), "Drop")
+        val toRemove = marked.markers.single { it.name == "Drop" }.id
+
+        val removed = marked.removeMarker(toRemove)
+        assertEquals(listOf("Keep"), removed.markers.map { it.name })
+    }
+
+    @Test
+    fun `marker operations on an unknown id change nothing`() {
+        val (project, ids) = projectWithOneClip()
+        assertSame(project, project.removeMarker("nope"))
+        assertSame(project, project.renameMarker("nope", "x"))
+        assertSame(project, project.moveMarker("nope", seconds(1.0)))
+        assertSame(project, project.setMarkerColorTag("nope", ColorTag.RED))
     }
 }

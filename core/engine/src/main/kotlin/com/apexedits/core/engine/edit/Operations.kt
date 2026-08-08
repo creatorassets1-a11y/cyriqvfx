@@ -1,7 +1,9 @@
 package com.apexedits.core.engine.edit
 
 import com.apexedits.core.model.Clip
+import com.apexedits.core.model.ColorTag
 import com.apexedits.core.model.IdSource
+import com.apexedits.core.model.Marker
 import com.apexedits.core.model.MediaRef
 import com.apexedits.core.model.Project
 import com.apexedits.core.model.Ticks
@@ -357,3 +359,62 @@ fun Project.relinkMedia(mediaId: String, uri: String): Project {
 
 fun Project.rename(name: String): Project =
     if (name == this.name) this else copy(name = name, revision = revision + 1)
+
+// --- markers -------------------------------------------------------------
+
+/**
+ * Adds a marker at [at].
+ *
+ * Unlike a keyframe, a marker is not scoped to a clip — it names a point on the
+ * *timeline*, so it stays where it is when a clip moves rather than travelling
+ * with one. A blank [name] is given a timecode-free placeholder rather than
+ * left empty, since an unnamed marker in a list of markers is not something a
+ * user can pick out later.
+ */
+fun Project.addMarker(
+    ids: IdSource,
+    at: Ticks,
+    name: String = "Marker",
+    note: String = "",
+    colorTag: ColorTag? = null,
+): Project = copy(
+    markers = (markers + Marker(ids.next("marker"), at.coerceAtLeast(Ticks.ZERO), name, note, colorTag))
+        .sortedBy { it.time.raw },
+    revision = revision + 1,
+)
+
+fun Project.removeMarker(markerId: String): Project {
+    if (markers.none { it.id == markerId }) return this
+    return copy(markers = markers.filterNot { it.id == markerId }, revision = revision + 1)
+}
+
+fun Project.renameMarker(markerId: String, name: String, note: String = ""): Project {
+    val index = markers.indexOfFirst { it.id == markerId }
+    if (index < 0) return this
+    val updated = markers[index].copy(name = name, note = note)
+    if (updated == markers[index]) return this
+    return copy(markers = markers.toMutableList().also { it[index] = updated }, revision = revision + 1)
+}
+
+fun Project.setMarkerColorTag(markerId: String, colorTag: ColorTag?): Project {
+    val index = markers.indexOfFirst { it.id == markerId }
+    if (index < 0) return this
+    if (markers[index].colorTag == colorTag) return this
+    return copy(
+        markers = markers.toMutableList().also { it[index] = it[index].copy(colorTag = colorTag) },
+        revision = revision + 1,
+    )
+}
+
+/** Drags a marker along the timeline. Clamped to zero; markers keep their order. */
+fun Project.moveMarker(markerId: String, to: Ticks): Project {
+    val index = markers.indexOfFirst { it.id == markerId }
+    if (index < 0) return this
+    val target = to.coerceAtLeast(Ticks.ZERO)
+    if (markers[index].time == target) return this
+    return copy(
+        markers = (markers.toMutableList().also { it[index] = it[index].copy(time = target) })
+            .sortedBy { it.time.raw },
+        revision = revision + 1,
+    )
+}

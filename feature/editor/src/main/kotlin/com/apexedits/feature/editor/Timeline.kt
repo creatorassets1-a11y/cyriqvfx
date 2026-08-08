@@ -47,6 +47,7 @@ import com.apexedits.core.designsystem.ApexTrackToggle
 import com.apexedits.core.designsystem.overflowSentinel
 import com.apexedits.core.engine.edit.keyframeTimelineTimes
 import com.apexedits.core.model.Clip
+import com.apexedits.core.model.ColorTag
 import com.apexedits.core.model.Project
 import com.apexedits.core.model.Ticks
 import com.apexedits.core.model.Track
@@ -79,6 +80,7 @@ fun Timeline(
     onSelectClip: (String?) -> Unit,
     onToggleLock: (String, Boolean) -> Unit,
     onToggleMute: (String, Boolean) -> Unit,
+    onMarkerClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var pixelsPerSecond by remember { mutableFloatStateOf(DEFAULT_PIXELS_PER_SECOND) }
@@ -143,6 +145,7 @@ fun Timeline(
                     onSeek = { fraction ->
                         onSeek(Ticks.ofSeconds(fraction * project.duration.toSeconds()))
                     },
+                    onMarkerClick = onMarkerClick,
                 )
 
                 project.tracks.forEach { track ->
@@ -341,6 +344,7 @@ private fun TimeRuler(
     pixelsPerSecond: Float,
     contentWidth: androidx.compose.ui.unit.Dp,
     onSeek: (Float) -> Unit,
+    onMarkerClick: (String) -> Unit,
 ) {
     val density = LocalDensity.current
     Box(
@@ -376,7 +380,44 @@ private fun TimeRuler(
                 modifier = Modifier.padding(start = x + 2.dp),
             )
         }
+
+        // Markers sit above the second ticks so they read as pins planted in the
+        // ruler rather than competing with the timecode labels underneath.
+        for (marker in project.markers) {
+            val x = with(density) { (marker.time.toSeconds() * pixelsPerSecond).toFloat().toDp() }
+            Box(
+                modifier = Modifier
+                    .padding(start = (x - MARKER_FLAG_WIDTH / 2).coerceAtLeast(0.dp))
+                    .width(MARKER_FLAG_WIDTH)
+                    .height(RULER_HEIGHT)
+                    .clickable { onMarkerClick(marker.id) }
+                    .semantics {
+                        contentDescription = "Marker \"${marker.name}\" at " +
+                            formatSeconds(marker.time.toSeconds()) + ". Tap to rename or delete it."
+                    },
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(2.dp)
+                        .fillMaxHeight()
+                        .background(markerColor(marker.colorTag)),
+                )
+            }
+        }
     }
+}
+
+/** Falls back to the theme's primary colour when the marker carries no explicit tag. */
+@Composable
+private fun markerColor(tag: ColorTag?): Color = when (tag) {
+    ColorTag.RED -> Color(0xFFE57373)
+    ColorTag.ORANGE -> Color(0xFFFFB74D)
+    ColorTag.YELLOW -> Color(0xFFFFF176)
+    ColorTag.GREEN -> Color(0xFF81C784)
+    ColorTag.BLUE -> Color(0xFF64B5F6)
+    ColorTag.PURPLE -> Color(0xFFBA68C8)
+    null -> MaterialTheme.colorScheme.primary
 }
 
 @Composable
@@ -413,6 +454,7 @@ private val AUDIO_TRACK_HEIGHT = 44.dp
 private val RULER_HEIGHT = 24.dp
 private val PLAYHEAD_WIDTH = 2.dp
 private val KEYFRAME_MARKER_SIZE = 8.dp
+private val MARKER_FLAG_WIDTH = 24.dp
 
 /**
  * Zoom range. The default shows about a minute on a typical phone; the bounds

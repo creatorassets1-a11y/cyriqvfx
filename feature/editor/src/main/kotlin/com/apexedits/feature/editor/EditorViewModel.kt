@@ -14,9 +14,12 @@ import com.apexedits.core.device.DeviceProfile
 import com.apexedits.core.device.HeavyOperation
 import com.apexedits.core.device.LowResourceWarning
 import com.apexedits.core.engine.edit.addKeyframe
+import com.apexedits.core.engine.edit.addMarker
 import com.apexedits.core.engine.edit.addTrack
 import com.apexedits.core.engine.edit.clearKeyframes
 import com.apexedits.core.engine.edit.removeKeyframe
+import com.apexedits.core.engine.edit.removeMarker
+import com.apexedits.core.engine.edit.renameMarker
 import com.apexedits.core.engine.edit.setPropertyValue
 import com.apexedits.core.engine.edit.addMedia
 import com.apexedits.core.engine.edit.appendClip
@@ -292,6 +295,22 @@ class EditorViewModel(
 
     fun showPanel(panel: EditorPanel?) {
         _state.value = _state.value.copy(openPanel = panel)
+    }
+
+    // --- markers ---------------------------------------------------------
+
+    /** Adds a marker at the playhead. The no-selection toolbar's "Add Marker" button. */
+    fun addMarkerAtPlayhead() {
+        val at = _state.value.playhead
+        apply("Add marker") { it.addMarker(ids, at) }
+    }
+
+    fun renameMarker(markerId: String, name: String, note: String) {
+        apply("Rename marker") { it.renameMarker(markerId, name, note) }
+    }
+
+    fun removeMarker(markerId: String) {
+        apply("Delete marker") { it.removeMarker(markerId) }
     }
 
     // --- media import --------------------------------------------------------

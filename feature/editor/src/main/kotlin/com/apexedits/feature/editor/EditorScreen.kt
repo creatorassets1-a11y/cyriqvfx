@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.OpenWith
@@ -52,6 +53,10 @@ import com.apexedits.core.designsystem.ApexToolButton
 import com.apexedits.core.designsystem.ApexToolRow
 import com.apexedits.core.designsystem.overflowSentinel
 import com.apexedits.core.model.AnimatableProperty
+import com.apexedits.core.model.FrameRate
+import com.apexedits.core.model.Marker
+import com.apexedits.core.model.MediaKind
+import com.apexedits.core.model.MediaRef
 import com.apexedits.core.model.TrackKind
 import com.apexedits.core.model.formatTimecode
 
@@ -94,6 +99,7 @@ fun EditorScreen(
         if (uri != null && targetId != null) viewModel.relinkMedia(targetId, uri)
     }
     var showRelinkDialog by remember { mutableStateOf(false) }
+    var markerDialogTargetId by remember { mutableStateOf<String?>(null) }
 
     ApexScaffold(tag = "EditorScreen", modifier = modifier) { width, height ->
         when {
@@ -140,6 +146,7 @@ fun EditorScreen(
                             onSelectClip = viewModel::selectClip,
                             onToggleLock = viewModel::setTrackLocked,
                             onToggleMute = viewModel::setTrackMuted,
+                            onMarkerClick = { markerDialogTargetId = it },
                         )
                     },
                     toolbar = { m ->
@@ -168,6 +175,7 @@ fun EditorScreen(
                                 onSplit = viewModel::splitAtPlayhead,
                                 onDelete = viewModel::deleteSelected,
                                 onDuplicate = viewModel::duplicateSelected,
+                                onAddMarker = viewModel::addMarkerAtPlayhead,
                                 onTogglePanel = { panel ->
                                     viewModel.showPanel(if (state.openPanel == panel) null else panel)
                                 },
@@ -260,6 +268,25 @@ fun EditorScreen(
                 },
                 onDismiss = { showRelinkDialog = false },
             )
+        }
+
+        markerDialogTargetId?.let { markerId ->
+            val marker = state.project?.markers?.firstOrNull { it.id == markerId }
+            if (marker != null) {
+                MarkerDialog(
+                    marker = marker,
+                    frameRate = state.project!!.format.frameRate,
+                    onRename = { name, note ->
+                        viewModel.renameMarker(markerId, name, note)
+                        markerDialogTargetId = null
+                    },
+                    onDelete = {
+                        viewModel.removeMarker(markerId)
+                        markerDialogTargetId = null
+                    },
+                    onDismiss = { markerDialogTargetId = null },
+                )
+            }
         }
     }
 
@@ -370,6 +397,7 @@ private fun ContextualToolbar(
     onSplit: () -> Unit,
     onDelete: () -> Unit,
     onDuplicate: () -> Unit,
+    onAddMarker: () -> Unit,
     onTogglePanel: (EditorPanel) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -405,6 +433,17 @@ private fun ContextualToolbar(
                         "pieces.",
                     description = "Split every clip under the current playhead into two clips.",
                     onClick = onSplit,
+                )
+            }
+            item {
+                ApexToolButton(
+                    icon = Icons.Filled.Flag,
+                    label = "Add Marker",
+                    tooltip = "Add Marker — Drops a labelled pin on the timeline at the playhead, " +
+                        "so you can find this moment again later.",
+                    description = "Add a marker at the current playhead position. Tap the marker " +
+                        "afterwards to name it or add a note.",
+                    onClick = onAddMarker,
                 )
             }
         } else {
@@ -521,8 +560,8 @@ private fun MissingMediaBanner(count: Int, onClick: () -> Unit) {
  */
 @Composable
 private fun RelinkDialog(
-    missing: List<com.apexedits.core.model.MediaRef>,
-    onLocate: (mediaId: String, kind: com.apexedits.core.model.MediaKind) -> Unit,
+    missing: List<MediaRef>,
+    onLocate: (mediaId: String, kind: MediaKind) -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
@@ -560,11 +599,62 @@ private fun RelinkDialog(
     )
 }
 
+/**
+ * Rename or delete a marker.
+ *
+ * One dialog for both, since a marker's whole purpose is to be a short-lived
+ * annotation — a separate screen for editing it would outweigh the thing being
+ * edited.
+ */
+@Composable
+private fun MarkerDialog(
+    marker: Marker,
+    frameRate: FrameRate,
+    onRename: (name: String, note: String) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember(marker.id) { mutableStateOf(marker.name) }
+    var note by remember(marker.id) { mutableStateOf(marker.note) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Marker at " + formatTimecode(marker.time, frameRate)) },
+        text = {
+            Column {
+                androidx.compose.material3.OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Marker name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Note (optional)") },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+                TextButton(
+                    onClick = onDelete,
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    Text("Delete Marker", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onRename(name.ifBlank { "Marker" }, note) }) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
 /** MIME filter for the relink picker, scoped to the kind of the missing media. */
-private fun com.apexedits.core.model.MediaKind.mimeTypesForRelink(): Array<String> = when (this) {
-    com.apexedits.core.model.MediaKind.VIDEO -> arrayOf("video/*")
-    com.apexedits.core.model.MediaKind.AUDIO -> arrayOf("audio/*")
-    com.apexedits.core.model.MediaKind.IMAGE -> arrayOf("image/*")
+private fun MediaKind.mimeTypesForRelink(): Array<String> = when (this) {
+    MediaKind.VIDEO -> arrayOf("video/*")
+    MediaKind.AUDIO -> arrayOf("audio/*")
+    MediaKind.IMAGE -> arrayOf("image/*")
 }
 
 /** Pulls one or many URIs out of a picker result, which reports them differently. */
