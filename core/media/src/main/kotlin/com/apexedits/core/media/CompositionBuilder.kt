@@ -2,7 +2,6 @@ package com.apexedits.core.media
 
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
@@ -83,7 +82,7 @@ object CompositionBuilder {
                 builder.addGap(gap.toMicros())
             }
 
-            builder.addItem(buildItem(clip, media.uri, media.kind, track, audible))
+            builder.addItem(buildItem(clip, media.uri, media.kind, track, audible, project))
             cursor = clip.timelineEnd
             added++
         }
@@ -97,6 +96,7 @@ object CompositionBuilder {
         kind: MediaKind,
         track: Track,
         audible: Boolean,
+        project: Project,
     ): EditedMediaItem {
         val mediaItem = MediaItem.Builder()
             .setUri(uri)
@@ -112,21 +112,18 @@ object CompositionBuilder {
             )
             .build()
 
+        // One effect covers both the static and the animated case, because a
+        // static transform is just an animation with no keyframes. Using the
+        // same code path for both means the preview cannot behave differently
+        // from the export the moment a keyframe is added.
         val videoEffects = buildList {
-            val transform = clip.transform
-            if (transform.rotationDegrees != 0f || transform.scaleX != 1f || transform.scaleY != 1f ||
-                transform.flipHorizontal || transform.flipVertical
-            ) {
+            if (track.kind == TrackKind.VIDEO && KeyframedTransformation.isNeeded(clip)) {
                 add(
-                    ScaleAndRotateTransformation.Builder()
-                        // A flip is a negative scale; folding it in here avoids
-                        // a second pass over every frame.
-                        .setScale(
-                            transform.scaleX * if (transform.flipHorizontal) -1f else 1f,
-                            transform.scaleY * if (transform.flipVertical) -1f else 1f,
-                        )
-                        .setRotationDegrees(transform.rotationDegrees)
-                        .build(),
+                    KeyframedTransformation(
+                        clip = clip,
+                        frameWidth = project.format.width,
+                        frameHeight = project.format.height,
+                    ),
                 )
             }
         }

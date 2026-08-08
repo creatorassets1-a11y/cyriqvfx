@@ -16,8 +16,13 @@ labelling rule applied retroactively to 200 controls never fully lands).
 Keyframes are the backbone: transform, colour, audio and effect intensity all
 animate through one system, so it comes first and everything else plugs into it.
 
-1. **Keyframes** — model, timeline diamonds, easing, graph editor.
-2. **Transform UI** — on-screen handles for the `Transform` already stored.
+1. **Keyframes** ✅ — model, interpolation, easing, editing operations, timeline
+   diamonds, and the three-state diamond in the Transform panel. Rendered through
+   a single `MatrixTransformation` so preview and export cannot diverge.
+   Remaining: the graph editor, dragging diamonds on the timeline, and animated
+   opacity/volume at the renderer (both need a shader program rather than a
+   matrix).
+2. **Transform UI** — on-screen handles on the preview; sliders exist today.
 3. **Colour** — basic sliders, then curves, wheels, LUTs.
 4. **Effects & transitions** — library, performance tags, keyframeable parameters.
 5. **Masks and chroma key** — first real FFmpeg work (ADR 0002).

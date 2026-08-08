@@ -11,7 +11,11 @@ import com.apexedits.core.data.ProjectStore
 import com.apexedits.core.device.DeviceProfile
 import com.apexedits.core.device.HeavyOperation
 import com.apexedits.core.device.LowResourceWarning
+import com.apexedits.core.engine.edit.addKeyframe
 import com.apexedits.core.engine.edit.addTrack
+import com.apexedits.core.engine.edit.clearKeyframes
+import com.apexedits.core.engine.edit.removeKeyframe
+import com.apexedits.core.engine.edit.setPropertyValue
 import com.apexedits.core.engine.edit.addMedia
 import com.apexedits.core.engine.edit.appendClip
 import com.apexedits.core.engine.edit.deleteClip
@@ -24,6 +28,7 @@ import com.apexedits.core.engine.edit.setTrackLocked
 import com.apexedits.core.engine.edit.setTrackMuted
 import com.apexedits.core.engine.edit.splitAllTracksAt
 import com.apexedits.core.engine.history.History
+import com.apexedits.core.model.AnimatableProperty
 import com.apexedits.core.model.CountingIdSource
 import com.apexedits.core.model.IdSource
 import com.apexedits.core.model.MediaKind
@@ -145,7 +150,12 @@ class EditorViewModel(
     }
 
     fun selectClip(clipId: String?) {
-        _state.value = _state.value.copy(selectedClipId = clipId)
+        _state.value = _state.value.copy(
+            selectedClipId = clipId,
+            // A panel about a clip has nothing to show once the clip is
+            // deselected, so it closes rather than lingering over nothing.
+            openPanel = if (clipId == null) null else _state.value.openPanel,
+        )
     }
 
     fun splitAtPlayhead() {
@@ -204,6 +214,53 @@ class EditorViewModel(
             return
         }
         apply("Add track") { it.addTrack(ids, kind) }
+    }
+
+    // --- transform and keyframes --------------------------------------------
+
+    /**
+     * Moves a property's value at the playhead.
+     *
+     * Coalesced, so a drag is one undoable step. The engine decides whether that
+     * writes a keyframe or the static value, which keeps every surface that
+     * edits a property behaving identically.
+     */
+    fun setProperty(property: AnimatableProperty, value: Float) {
+        val clipId = _state.value.selectedClipId ?: return
+        val at = _state.value.playhead
+        apply("Change ${property.displayName.lowercase()}", coalesce = true) {
+            it.setPropertyValue(clipId, property, at, value)
+        }
+    }
+
+    /**
+     * Adds a keyframe at the playhead, or removes the one already there.
+     *
+     * One button for both directions because the diamond shows which it will do,
+     * and a separate "remove keyframe" control would be a second thing to find.
+     */
+    fun toggleKeyframe(property: AnimatableProperty) {
+        val clipId = _state.value.selectedClipId ?: return
+        val clip = _state.value.project?.clip(clipId) ?: return
+        val at = _state.value.playhead
+        val timeInClip = (at - clip.timelineStart).coerceAtLeast(Ticks.ZERO)
+
+        if (clip.track(property).keyframeAt(timeInClip) != null) {
+            apply("Remove animation point") { it.removeKeyframe(clipId, property, at) }
+        } else {
+            apply("Add animation point") { it.addKeyframe(clipId, property, at) }
+        }
+    }
+
+    fun clearProperty(property: AnimatableProperty) {
+        val clipId = _state.value.selectedClipId ?: return
+        apply("Stop animating ${property.displayName.lowercase()}") {
+            it.clearKeyframes(clipId, property)
+        }
+    }
+
+    fun showPanel(panel: EditorPanel?) {
+        _state.value = _state.value.copy(openPanel = panel)
     }
 
     // --- media import --------------------------------------------------------
@@ -321,7 +378,11 @@ data class EditorUiState(
     val warning: LowResourceWarning? = null,
     val pendingAction: (() -> Unit)? = null,
     val message: String? = null,
+    val openPanel: EditorPanel? = null,
 ) {
     val selectedClip get() = selectedClipId?.let { project?.clip(it) }
     val hasSelection get() = selectedClip != null
 }
+
+/** Which tool panel is open. Null means none, and the timeline gets the space. */
+enum class EditorPanel { TRANSFORM }

@@ -142,6 +142,14 @@ data class Clip(
     val colorTag: ColorTag? = null,
     /** Set when this clip's audio was detached from its video, or vice versa. */
     val linkedClipId: String? = null,
+    /**
+     * Animated properties, keyed by property. A property absent from this map
+     * reads its static value from [transform], [volume] or [speed].
+     *
+     * Keyframe times are relative to the start of this clip, so moving the clip
+     * carries its animation without rewriting a single keyframe.
+     */
+    val animations: Map<AnimatableProperty, PropertyTrack> = emptyMap(),
 ) {
     /** Length of the source window. Playback speed scales it onto the timeline. */
     val sourceDuration: Ticks get() = sourceOut - sourceIn
@@ -160,6 +168,37 @@ data class Clip(
         val offset = time - timelineStart
         val scaled = if (speed == 1f) offset else Ticks((offset.raw * speed).toLong())
         return (sourceIn + scaled).coerceIn(sourceIn, sourceOut)
+    }
+
+    /** True when any property on this clip animates. Drives the timeline diamonds. */
+    val hasAnimation: Boolean get() = animations.values.any { it.keyframes.isNotEmpty() }
+
+    fun track(property: AnimatableProperty): PropertyTrack =
+        animations[property] ?: PropertyTrack.EMPTY
+
+    /** The static value a property falls back to when it is not animated. */
+    fun staticValue(property: AnimatableProperty): Float = when (property) {
+        AnimatableProperty.POSITION_X -> transform.positionX
+        AnimatableProperty.POSITION_Y -> transform.positionY
+        AnimatableProperty.SCALE_X -> transform.scaleX
+        AnimatableProperty.SCALE_Y -> transform.scaleY
+        AnimatableProperty.ROTATION -> transform.rotationDegrees
+        AnimatableProperty.OPACITY -> transform.opacity
+        AnimatableProperty.VOLUME -> volume
+    }
+
+    /** Replaces a property's static value, leaving any animation on it alone. */
+    fun withStaticValue(property: AnimatableProperty, value: Float): Clip {
+        val clamped = property.clamp(value)
+        return when (property) {
+            AnimatableProperty.POSITION_X -> copy(transform = transform.copy(positionX = clamped))
+            AnimatableProperty.POSITION_Y -> copy(transform = transform.copy(positionY = clamped))
+            AnimatableProperty.SCALE_X -> copy(transform = transform.copy(scaleX = clamped))
+            AnimatableProperty.SCALE_Y -> copy(transform = transform.copy(scaleY = clamped))
+            AnimatableProperty.ROTATION -> copy(transform = transform.copy(rotationDegrees = clamped))
+            AnimatableProperty.OPACITY -> copy(transform = transform.copy(opacity = clamped))
+            AnimatableProperty.VOLUME -> copy(volume = clamped)
+        }
     }
 }
 

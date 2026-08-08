@@ -66,6 +66,8 @@ professional editing · **P3** captions and polish · **P4** hardening.
 | Reverse | Planned | P2 | — |
 | Constant speed | Built | P1 | `setClipSpeed`, clamped 0.1×–100× |
 | Speed curves / ramping / time remapping | Planned | P2 | — |
+| Keyframe diamonds on the selected clip | Built | P2 | `Timeline.kt` `KeyframeMarkers` |
+| Drag a keyframe on the timeline | Planned | P2 | `moveKeyframe` exists in the engine; no gesture yet |
 | Markers | Modelled | P2 | `Marker` in the document; no UI |
 | Chapters, comments | Modelled | P3 | `Marker.note` |
 | Waveforms on audio | Planned | P2 | `ThumbnailCache` is the pattern to follow |
@@ -77,14 +79,31 @@ professional editing · **P3** captions and polish · **P4** hardening.
 | In/out points, loop playback | Planned | P2 | — |
 | Fullscreen preview | Planned | P2 | — |
 
+## Keyframe animation (PRD §3.1)
+
+| PRD feature | Status | Phase | Where |
+|---|---|---|---|
+| Keyframes on clip properties | Built | P2 | `model/Keyframes.kt`, `engine/animation/Interpolation.kt` |
+| Easing: linear, ease in, ease out, ease in/out, hold | Built | P2 | `Easing` |
+| Custom bezier curves | Built | P2 | `BezierHandles`, Newton–Raphson solve with bisection fallback |
+| Keyframe button in the contextual toolbar | Built | P2 | Transform panel's three-state diamond |
+| Add / remove / move keyframes | Built | P2 | `engine/edit/KeyframeOperations.kt` |
+| Graph editor ("Show Animation Curves") | Planned | P2 | Curve model is complete; the drawing surface is not |
+| Long-press a diamond to edit easing | Planned | P2 | `setKeyframeEasing` exists in the engine |
+| Export matches preview within 1 frame | Built | P2 | One `MatrixTransformation` consumed by both — ADR 0004 |
+| Unlimited keyframes, warning past ~50 on a clip | Planned | P2 | `HeavyOperation` is the hook |
+
 ## Video tools
 
 | PRD feature | Status | Phase | Where |
 |---|---|---|---|
-| Transform: position, scale, rotation, opacity, flip | Modelled | P2 | `Transform` stored and applied at export via `ScaleAndRotateTransformation`; no gesture handles |
+| Transform: position, scale, rotation, opacity, flip | Built | P2 | Transform panel with sliders; rendered via `KeyframedTransformation` |
 | Transform: anchor point | Planned | P2 | — |
+| On-screen transform handles on the preview | Planned | P2 | Values are editable by slider today |
 | Crop | Modelled | P2 | `Transform.cropLeft/Top/Right/Bottom` stored, not yet rendered |
-| Keyframeable transform | Planned | P2 | — |
+| Keyframeable transform (position, scale, rotation) | Built | P2 | `engine/animation`, `KeyframedTransformation` — preview and export share one effect |
+| Keyframeable opacity | Modelled | P2 | Stored, evaluated and resolved by `composeFrame`; the **renderer applies only the static value** — an animated alpha needs a shader program, not a matrix |
+| Keyframeable volume | Modelled | P2 | Stored and evaluated; `Composition` does not yet carry a time-varying gain |
 | Chroma key with tolerance/edge/spill/shadow | Planned | P2 | FFmpeg `chromakey` |
 | Masks: rectangle, ellipse, freehand, text, linear | Planned | P2 | — |
 | Mask feather, invert, track matte | Planned | P2 | — |

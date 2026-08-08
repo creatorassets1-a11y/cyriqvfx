@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
@@ -46,6 +47,7 @@ import com.apexedits.core.designsystem.ApexScaffold
 import com.apexedits.core.designsystem.ApexToolButton
 import com.apexedits.core.designsystem.ApexToolRow
 import com.apexedits.core.designsystem.overflowSentinel
+import com.apexedits.core.model.AnimatableProperty
 import com.apexedits.core.model.TrackKind
 import com.apexedits.core.model.formatTimecode
 
@@ -123,15 +125,36 @@ fun EditorScreen(
                         )
                     },
                     toolbar = { m ->
-                        ContextualToolbar(
-                            modifier = m,
-                            hasSelection = state.hasSelection,
-                            onImport = { importLauncher.launch(viewModel.importIntent()) },
-                            onAddTrack = { viewModel.addTrack(TrackKind.VIDEO) },
-                            onSplit = viewModel::splitAtPlayhead,
-                            onDelete = viewModel::deleteSelected,
-                            onDuplicate = viewModel::duplicateSelected,
-                        )
+                        Column(modifier = m) {
+                            // The panel sits above the toolbar rather than over
+                            // the preview, so the tool that opened it stays
+                            // visible and tapping it again closes it.
+                            state.selectedClip?.let { clip ->
+                                if (state.openPanel == EditorPanel.TRANSFORM) {
+                                    TransformPanel(
+                                        clip = clip,
+                                        playhead = state.playhead,
+                                        maxHeight = height,
+                                        onValueChange = viewModel::setProperty,
+                                        onValueChangeFinished = {},
+                                        onToggleKeyframe = viewModel::toggleKeyframe,
+                                        onClearProperty = viewModel::clearProperty,
+                                    )
+                                }
+                            }
+                            ContextualToolbar(
+                                hasSelection = state.hasSelection,
+                                openPanel = state.openPanel,
+                                onImport = { importLauncher.launch(viewModel.importIntent()) },
+                                onAddTrack = { viewModel.addTrack(TrackKind.VIDEO) },
+                                onSplit = viewModel::splitAtPlayhead,
+                                onDelete = viewModel::deleteSelected,
+                                onDuplicate = viewModel::duplicateSelected,
+                                onTogglePanel = { panel ->
+                                    viewModel.showPanel(if (state.openPanel == panel) null else panel)
+                                },
+                            )
+                        }
                     },
                 )
             }
@@ -280,13 +303,15 @@ private fun EditorTopBar(
  */
 @Composable
 private fun ContextualToolbar(
-    modifier: Modifier,
     hasSelection: Boolean,
+    openPanel: EditorPanel?,
     onImport: () -> Unit,
     onAddTrack: () -> Unit,
     onSplit: () -> Unit,
     onDelete: () -> Unit,
     onDuplicate: () -> Unit,
+    onTogglePanel: (EditorPanel) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     ApexToolRow(modifier = modifier.background(MaterialTheme.colorScheme.surface)) {
         if (!hasSelection) {
@@ -354,6 +379,19 @@ private fun ContextualToolbar(
                     description = "Create a copy of the selected clip with the same settings and " +
                         "place it directly after the original on the same track.",
                     onClick = onDuplicate,
+                )
+            }
+            item {
+                ApexToolButton(
+                    icon = Icons.Filled.OpenWith,
+                    label = "Transform",
+                    tooltip = "Transform & Animation — Move, resize, rotate, and fade the clip. " +
+                        "Tap a diamond next to any setting to animate it over time.",
+                    description = "Open transform and animation controls for the selected clip: " +
+                        "position, size, rotation, and opacity, each of which can be animated " +
+                        "with keyframes.",
+                    selected = openPanel == EditorPanel.TRANSFORM,
+                    onClick = { onTogglePanel(EditorPanel.TRANSFORM) },
                 )
             }
             item {

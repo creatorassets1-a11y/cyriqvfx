@@ -8,6 +8,8 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -32,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -41,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apexedits.core.designsystem.ApexTrackToggle
 import com.apexedits.core.designsystem.overflowSentinel
+import com.apexedits.core.engine.edit.keyframeTimelineTimes
 import com.apexedits.core.model.Clip
 import com.apexedits.core.model.Project
 import com.apexedits.core.model.Ticks
@@ -294,6 +299,39 @@ private fun ClipBlock(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 6.dp),
         )
+
+        // Animation points, drawn along the bottom of the clip so they never
+        // cover the name. Only on the selected clip: showing every clip's
+        // keyframes at once turns a busy timeline into confetti.
+        if (selected && clip.hasAnimation) {
+            KeyframeMarkers(clip = clip, pixelsPerSecond = pixelsPerSecond)
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.KeyframeMarkers(clip: Clip, pixelsPerSecond: Float) {
+    val density = LocalDensity.current
+    val times = remember(clip.animations, clip.timelineStart) { clip.keyframeTimelineTimes() }
+
+    for (time in times) {
+        val offset = with(density) {
+            ((time - clip.timelineStart).toSeconds() * pixelsPerSecond).toFloat().toDp()
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = (offset - KEYFRAME_MARKER_SIZE / 2).coerceAtLeast(0.dp), bottom = 2.dp)
+                .size(KEYFRAME_MARKER_SIZE)
+                // A rotated square reads as the diamond every NLE uses, without
+                // needing an icon asset.
+                .rotate(45f)
+                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(1.dp))
+                .semantics {
+                    contentDescription = "Animation point at " +
+                        formatSeconds(time.toSeconds()) + " on this clip."
+                },
+        )
     }
 }
 
@@ -374,6 +412,7 @@ private val VIDEO_TRACK_HEIGHT = 56.dp
 private val AUDIO_TRACK_HEIGHT = 44.dp
 private val RULER_HEIGHT = 24.dp
 private val PLAYHEAD_WIDTH = 2.dp
+private val KEYFRAME_MARKER_SIZE = 8.dp
 
 /**
  * Zoom range. The default shows about a minute on a typical phone; the bounds

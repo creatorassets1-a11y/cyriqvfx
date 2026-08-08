@@ -1,5 +1,7 @@
 package com.apexedits.core.engine.compose
 
+import com.apexedits.core.engine.animation.transformAt
+import com.apexedits.core.engine.animation.volumeAt
 import com.apexedits.core.model.Project
 import com.apexedits.core.model.Ticks
 import com.apexedits.core.model.TrackKind
@@ -72,6 +74,10 @@ fun composeFrame(project: Project, time: Ticks): RenderFrame {
         if (!media.available) continue
 
         val sourceTime = clip.sourceTimeAt(time)
+        // Keyframes are resolved here, once, rather than by each consumer. A
+        // layer leaving this function carries final values only.
+        val transform = clip.transformAt(time)
+        val volume = clip.volumeAt(time)
 
         when (track.kind) {
             TrackKind.VIDEO -> {
@@ -81,8 +87,8 @@ fun composeFrame(project: Project, time: Ticks): RenderFrame {
                     mediaId = media.id,
                     mediaUri = media.uri,
                     sourceTime = sourceTime,
-                    transform = clip.transform,
-                    effectiveOpacity = clip.transform.opacity.coerceIn(0f, 1f),
+                    transform = transform,
+                    effectiveOpacity = transform.opacity.coerceIn(0f, 1f),
                 )
                 // A video clip with sound contributes audio too, unless its
                 // track is muted or another track has been soloed.
@@ -92,7 +98,7 @@ fun composeFrame(project: Project, time: Ticks): RenderFrame {
                         mediaId = media.id,
                         mediaUri = media.uri,
                         sourceTime = sourceTime,
-                        effectiveVolume = clip.volume * track.volume,
+                        effectiveVolume = volume * track.volume,
                     )
                 }
             }
@@ -108,7 +114,7 @@ fun composeFrame(project: Project, time: Ticks): RenderFrame {
                     mediaId = media.id,
                     mediaUri = media.uri,
                     sourceTime = sourceTime,
-                    effectiveVolume = clip.volume * track.volume,
+                    effectiveVolume = volume * track.volume,
                 )
             }
         }

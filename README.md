@@ -12,7 +12,11 @@ under test.
 **Built and building.** A real Android app that assembles, installs and runs:
 
 - A frame-accurate edit engine — timeline model, split, trim, ripple, move,
-  duplicate, deep undo — as pure Kotlin, with 67 unit tests across the core modules.
+  duplicate, deep undo — as pure Kotlin, with 97 unit tests across the core modules.
+- Keyframe animation for position, scale and rotation: easing presets, custom
+  bezier curves, a three-state keyframe diamond per property, and diamonds on the
+  timeline. Preview and export share one Media3 effect, so an animation cannot
+  render differently in the two.
 - Multi-track timeline with pinch zoom, selection, and track lock/mute.
 - Media3 preview over a `Composition` built from the timeline.
 - Media import from device storage, with metadata, rotation handling, and
@@ -23,9 +27,10 @@ under test.
 - Auto-save with crash recovery.
 - The zero-overflow layout system and the self-explanatory control library.
 
-**Not built.** Most of the PRD: keyframes, colour grading, effects, transitions,
-masks, chroma key, stabilisation, audio processing, text, Whisper captions,
-FFmpeg integration, stock media. All of it is tracked individually in
+**Not built.** Most of the PRD: colour grading, effects, transitions, masks,
+chroma key, stabilisation, audio processing, text, Whisper captions, FFmpeg
+integration, stock media — and, within keyframes, the animation graph editor and
+animated opacity at the renderer. All of it is tracked individually in
 [`docs/02-feature-coverage.md`](docs/02-feature-coverage.md) with a status and a
 target phase — nothing has been quietly dropped.
 
@@ -36,7 +41,7 @@ render contract, and the two UI guarantees the PRD is most specific about.
 ## Building
 
 ```bash
-./gradlew test              # 67 unit tests: engine, timebase, device policy, copy audit
+./gradlew test              # 97 unit tests: engine, keyframes, timebase, device policy, copy audit
 ./gradlew :app:lintDebug
 ./gradlew assembleDebug     # → app/build/outputs/apk/debug/app-debug.apk (~24 MB)
 ```
@@ -67,7 +72,11 @@ stack affordable on a 3 GB phone.
 **Preview and export consume the same composition.** `composeFrame` returns a
 frame with nothing left to interpret, and one `Composition` feeds both
 `CompositionPlayer` and `Transformer`. "Export matches the preview" is therefore
-structural rather than something QA has to keep catching.
+structural rather than something QA has to keep catching. Keyframes keep it that
+way: an animated transform is a `MatrixTransformation` — a function from
+presentation time to a matrix — evaluated by the same effect pipeline in both,
+rather than an animation implemented once for the preview and baked again for
+export.
 
 **Editing operations clamp; they never throw.** A trim past the end of the media
 stops at the media. A move onto a locked track is a no-op. These functions are
@@ -103,6 +112,7 @@ network access.
 | [`docs/adr/0002-ffmpeg-dependency.md`](docs/adr/0002-ffmpeg-dependency.md) | ffmpeg-kit is retired; which fork, and why LGPL not GPL |
 | [`docs/adr/0003-whisper-bundling.md`](docs/adr/0003-whisper-bundling.md) | No official AAR; vendoring whisper.cpp |
 | [`docs/adr/0004-preview-export-parity.md`](docs/adr/0004-preview-export-parity.md) | One composition, two consumers |
+| [`docs/adr/0005-keyframe-rendering.md`](docs/adr/0005-keyframe-rendering.md) | Animating through `MatrixTransformation`, and what it cannot cover |
 | [`docs/LICENSES.md`](docs/LICENSES.md) | Attribution for bundled and planned components |
 
 ## Licence
