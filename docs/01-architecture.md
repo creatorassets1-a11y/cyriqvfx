@@ -177,3 +177,54 @@ projects vanish after an update, with no cloud copy to restore from.
 `AutoSave` debounces on a 2 s quiet period and deduplicates by `revision` — a
 counter that only advances when an operation actually changed something — so a
 slider drag writes once at the end rather than sixty times during.
+
+## Testing
+
+189 unit tests, no emulator required. The split is deliberate:
+
+| Layer | How |
+|---|---|
+| `core:model`, `core:engine` | Plain JVM. No Android on the classpath, so they run in seconds. |
+| `core:data`, `core:media` | **Robolectric** — real Room, real SQLite, real file I/O, and `ShadowMediaMetadataRetriever` for import. |
+| UI overflow matrix, touch targets | Instrumented. Needs a device; runs in CI only. |
+
+### The sample clip
+
+Engine and data tests run against the measurements of a real 33-second phone
+recording rather than round synthetic numbers: 576×640 at exactly 30 fps, AAC
+44.1 kHz, and — the useful part — **video and audio tracks that are 24 ms
+different in length**. The constants live in `SampleVideo` (test fixtures); the
+footage itself is deliberately not in the repository.
+
+`SampleVideoFixtureTest` keeps those constants honest by re-deriving them from
+the real file with a small test-only MP4 box reader, when a path is supplied:
+
+```bash
+./gradlew test -Papex.sampleVideo=/path/to/clip.mp4
+```
+
+Without the property those eight tests skip rather than fail, so CI stays green
+with no video committed. A fixture that has silently drifted from reality is
+worse than none, because everything built on it keeps passing while testing the
+wrong thing.
+
+### What testing against real numbers found
+
+Two bugs that synthetic fixtures had not:
+
+- **`Ticks.ofMicros` was lossy.** There are 705.6 ticks in a microsecond;
+  integer division truncated that to 705, a 0.085% error — 28 ms across this
+  clip, close to a whole frame — on the conversion *every animated property makes
+  every frame*. Now held as the exact fraction 3528/5.
+- **A sequence beginning with a gap threw.** Media3 rejects one unless a
+  force-track flag is set, and `CompositionBuilder` emitted exactly that whenever
+  a track's first clip did not start at zero. Dragging a clip away from the start
+  would have failed both the preview and the export.
+
+### What cannot be verified here
+
+The development host has no hardware virtualisation — no `vmx`/`svm`, no
+`/dev/kvm` — and Android's x86 system images require KVM. So decode, encode,
+export, and the alpha shader's GLSL are **unexecuted** in this environment. They
+are verified on a device or in the CI emulator job, and the coverage table says
+so rather than implying otherwise.

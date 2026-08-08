@@ -60,9 +60,27 @@ value class Ticks(val raw: Long) : Comparable<Ticks> {
 
     fun toMillis(): Long = raw / (TICKS_PER_SECOND / 1000)
 
-    fun toMicros(): Long = raw / (TICKS_PER_SECOND / 1_000_000)
+    /**
+     * Microseconds, the unit Media3 speaks.
+     *
+     * There are 705.6 ticks in a microsecond, which is *not* a whole number, so
+     * the conversion has to go through the exact fraction 3528/5. Dividing by an
+     * integer 705 instead loses 0.085% — twenty-eight milliseconds across a
+     * thirty-second clip, nearly a frame — and it compounds, because this is the
+     * conversion every animated property goes through on every frame.
+     */
+    fun toMicros(): Long = raw * MICRO_DENOMINATOR / MICRO_NUMERATOR
 
     companion object {
+        /**
+         * TICKS_PER_SECOND / 1,000,000 = 705.6, held exactly as 3528/5.
+         *
+         * Multiplying before dividing keeps it exact and still leaves headroom
+         * for timelines far longer than anyone will edit on a phone.
+         */
+        private const val MICRO_NUMERATOR = 3528L
+        private const val MICRO_DENOMINATOR = 5L
+
         val ZERO = Ticks(0)
         val MAX = Ticks(Long.MAX_VALUE / 4)
 
@@ -70,7 +88,8 @@ value class Ticks(val raw: Long) : Comparable<Ticks> {
 
         fun ofMillis(millis: Long) = Ticks(millis * (TICKS_PER_SECOND / 1000))
 
-        fun ofMicros(micros: Long) = Ticks(micros * (TICKS_PER_SECOND / 1_000_000))
+        /** See [toMicros]: 705.6 ticks per microsecond, as 3528/5. */
+        fun ofMicros(micros: Long) = Ticks(micros * MICRO_NUMERATOR / MICRO_DENOMINATOR)
     }
 }
 

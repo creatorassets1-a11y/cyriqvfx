@@ -6,6 +6,7 @@ import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
+import com.apexedits.core.model.AnimatableProperty
 import com.apexedits.core.model.Clip
 import com.apexedits.core.model.MediaKind
 import com.apexedits.core.model.Project
@@ -53,8 +54,21 @@ object CompositionBuilder {
             // Video is re-encoded because clips carry transforms; audio is
             // transmuxed when it can be, which is a large speed win on the
             // common case of untouched sound.
-            .setTransmuxAudio(project.tracks.none { it.kind == TrackKind.AUDIO && it.clips.isNotEmpty() })
+            //
+            // Volume automation has to veto that. Transmuxed audio is copied
+            // through without decoding, so the gain processor would never see a
+            // sample and the envelope would silently do nothing in the export
+            // while still being audible in the preview — precisely the
+            // preview/export divergence ADR 0004 exists to prevent.
+            .setTransmuxAudio(canTransmuxAudio(project))
             .build()
+    }
+
+    private fun canTransmuxAudio(project: Project): Boolean {
+        if (project.tracks.any { it.kind == TrackKind.AUDIO && it.clips.isNotEmpty() }) return false
+        return project.tracks
+            .flatMap { it.clips }
+            .none { it.track(AnimatableProperty.VOLUME).isAnimated }
     }
 
     private fun buildSequence(project: Project, track: Track): EditedMediaItemSequence? {
@@ -70,6 +84,7 @@ object CompositionBuilder {
         val builder = EditedMediaItemSequence.Builder()
         var cursor = Ticks.ZERO
         var added = 0
+        var startsWithGap = false
 
         for (clip in track.ordered) {
             if (!clip.enabled) continue
@@ -79,6 +94,7 @@ object CompositionBuilder {
             // Silence where a clip is missing keeps everything after it in sync.
             val gap = clip.timelineStart - cursor
             if (gap.isPositive) {
+                if (added == 0) startsWithGap = true
                 builder.addGap(gap.toMicros())
             }
 
@@ -87,7 +103,22 @@ object CompositionBuilder {
             added++
         }
 
-        return if (added == 0) null else builder.build()
+        if (added == 0) return null
+
+        // Media3 rejects a sequence that opens with a gap unless it is told what
+        // kind of silence to synthesise — there is no preceding item to infer it
+        // from. This is the ordinary case, not an edge one: it happens the moment
+        // a clip is dragged away from the start, or a second track begins part
+        // way through, so without this the composition throws and both the
+        // preview and the export fail outright.
+        if (startsWithGap) {
+            when (track.kind) {
+                TrackKind.VIDEO -> builder.experimentalSetForceVideoTrack(true)
+                TrackKind.AUDIO -> builder.experimentalSetForceAudioTrack(true)
+            }
+        }
+
+        return builder.build()
     }
 
     private fun buildItem(
@@ -126,6 +157,17 @@ object CompositionBuilder {
                     ),
                 )
             }
+            // Alpha last, so it scales the transformed frame rather than being
+            // resampled by the geometry pass afterwards.
+            if (track.kind == TrackKind.VIDEO && KeyframedAlphaEffect.isNeeded(clip)) {
+                add(KeyframedAlphaEffect(clip))
+            }
+        }
+
+        val audioProcessors = buildList {
+            if (audible && clip.track(AnimatableProperty.VOLUME).isAnimated) {
+                add(KeyframedGainProcessor(clip))
+            }
         }
 
         return EditedMediaItem.Builder(mediaItem)
@@ -138,8 +180,8 @@ object CompositionBuilder {
                     setDurationUs(clip.timelineDuration.toMicros())
                     setFrameRate(DEFAULT_IMAGE_FRAME_RATE)
                 }
-                if (videoEffects.isNotEmpty()) {
-                    setEffects(Effects(emptyList(), videoEffects))
+                if (videoEffects.isNotEmpty() || audioProcessors.isNotEmpty()) {
+                    setEffects(Effects(audioProcessors, videoEffects))
                 }
             }
             .build()

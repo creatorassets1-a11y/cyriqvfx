@@ -10,8 +10,10 @@ Settings → Licences screen required by PRD §4.6.
 | Kotlin, Kotlin stdlib, coroutines, kotlinx.serialization | Apache 2.0 |
 | Jetpack Compose, Material 3, Material Icons | Apache 2.0 |
 | AndroidX Media3 (ExoPlayer, Transformer, Effect, UI Compose) | Apache 2.0 |
+| Media3's `fragment_shader_alpha_scale_es2.glsl`, adopted verbatim in `KeyframedAlphaEffect` | Apache 2.0 — Copyright 2023 The Android Open Source Project |
 | AndroidX Room, DataStore, WorkManager, Lifecycle, Navigation, Core | Apache 2.0 |
 | JUnit 4 | Eclipse Public License 1.0 |
+| Robolectric (tests only) | MIT |
 
 ## Arriving in later phases
 

@@ -73,6 +73,33 @@ class TimeTest {
     }
 
     @Test
+    fun `microsecond conversion is exact, not truncated`() {
+        // There are 705.6 ticks in a microsecond. Dividing by an integer 705
+        // instead loses 0.085%, which is 28 ms across a 33-second clip — nearly
+        // a frame — and it is the conversion every animated property makes on
+        // every rendered frame. This regressed once; it must not again.
+        assertEquals(TICKS_PER_SECOND, Ticks.ofMicros(1_000_000).raw)
+        assertEquals(Ticks.ofSeconds(0.4).raw, Ticks.ofMicros(400_000).raw)
+        assertEquals(1_000_000L, Ticks(TICKS_PER_SECOND).toMicros())
+    }
+
+    @Test
+    fun `microseconds round-trip without drift over a long timeline`() {
+        // An hour, converted out and back. A per-microsecond error of even one
+        // tick would show up here as a visible offset.
+        val anHour = Ticks.ofSeconds(3600.0)
+        assertEquals(3_600_000_000L, anHour.toMicros())
+        assertEquals(anHour.raw, Ticks.ofMicros(anHour.toMicros()).raw)
+    }
+
+    @Test
+    fun `millisecond conversion is exact`() {
+        // 705,600 ticks per millisecond divides evenly, so this one always was.
+        assertEquals(TICKS_PER_SECOND, Ticks.ofMillis(1000).raw)
+        assertEquals(33_034L, Ticks.ofMillis(33_034).toMillis())
+    }
+
+    @Test
     fun `aspect ratios produce even widths for codec friendliness`() {
         for (aspect in AspectRatio.entries) {
             assertEquals("${aspect.displayName} width is odd", 0, aspect.widthFor(1080) % 2)

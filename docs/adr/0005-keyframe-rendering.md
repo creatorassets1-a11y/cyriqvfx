@@ -37,16 +37,36 @@ Two details that are easy to get wrong and were handled explicitly:
   picture — a 45° turn on 16:9 comes out visibly skewed. The rotation is wrapped
   in a scale into square space and back out.
 
-## What this does not cover
+## Beyond geometry: alpha and gain
 
-A matrix expresses geometry. It cannot express **alpha**, so animated opacity is
-modelled, stored and correctly resolved by `composeFrame`, but the renderer
-currently applies only the static value. The same is true of animated **volume**:
-`Composition` has no time-varying gain.
+A matrix expresses geometry and nothing else, so opacity and volume each needed
+their own mechanism. Both now exist, and the asymmetry in how confident we can be
+about them is worth stating.
 
-Both need a shader program or an audio processor rather than a matrix. They are
-recorded as `Modelled` in the feature coverage table rather than quietly claimed
-as done — the engine half is finished and tested, and the renderer half is not.
+**Volume — `KeyframedGainProcessor`, a `BaseAudioProcessor`.** `queueInput`
+carries no timestamp, so position is counted in frames against the configured
+sample rate, with `onFlush` taking Media3's position offset so a mid-clip seek
+resumes at the right point in the envelope. This is pure `ByteBuffer` arithmetic,
+so it is **fully verified**: the ramp is compared against the engine's
+interpolator sample by sample, and saturation at gains above 1 is asserted in
+both directions.
+
+One consequence had to be handled in `CompositionBuilder`: transmuxed audio is
+copied through without decoding, so it never reaches the processor. Volume
+automation therefore vetoes transmuxing. Without that the fade would be audible
+in the preview and silently absent from the export — the exact divergence this
+ADR exists to prevent, arriving through a performance optimisation.
+
+**Opacity — `KeyframedAlphaEffect`, a `GlEffect`.** Its shader program sets
+`uAlphaScale` in `drawFrame`, where the presentation time is available. Two
+things kept the risk down: `GlProgram` accepts shader **source strings**, so
+there is no asset packaging to get wrong, and the fragment shader is Media3's own
+`fragment_shader_alpha_scale_es2.glsl` adopted verbatim (Apache 2.0, attributed
+in `docs/LICENSES.md`). The only original decision is *when* the uniform is set.
+
+**The honest limit:** GLSL cannot be executed without a GPU, and the development
+host has no emulator. The uniform computation is unit-tested; the shader is not.
+The coverage table says so rather than implying the feature is equally proven.
 
 ## Consequences
 

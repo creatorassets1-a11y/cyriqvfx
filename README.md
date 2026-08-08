@@ -12,11 +12,12 @@ under test.
 **Built and building.** A real Android app that assembles, installs and runs:
 
 - A frame-accurate edit engine — timeline model, split, trim, ripple, move,
-  duplicate, deep undo — as pure Kotlin, with 97 unit tests across the core modules.
-- Keyframe animation for position, scale and rotation: easing presets, custom
-  bezier curves, a three-state keyframe diamond per property, and diamonds on the
-  timeline. Preview and export share one Media3 effect, so an animation cannot
-  render differently in the two.
+  duplicate, deep undo — as pure Kotlin, with 189 unit tests across the core
+  modules, including the persistence layer under Robolectric.
+- Keyframe animation for position, scale, rotation, **opacity and volume**:
+  easing presets, custom bezier curves, a three-state keyframe diamond per
+  property, and diamonds on the timeline. Preview and export share one Media3
+  effect pipeline, so an animation cannot render differently in the two.
 - Multi-track timeline with pinch zoom, selection, and track lock/mute.
 - Media3 preview over a `Composition` built from the timeline.
 - Media import from device storage, with metadata, rotation handling, and
@@ -28,9 +29,9 @@ under test.
 - The zero-overflow layout system and the self-explanatory control library.
 
 **Not built.** Most of the PRD: colour grading, effects, transitions, masks,
-chroma key, stabilisation, audio processing, text, Whisper captions, FFmpeg
-integration, stock media — and, within keyframes, the animation graph editor and
-animated opacity at the renderer. All of it is tracked individually in
+chroma key, stabilisation, audio processing beyond volume, text, Whisper
+captions, FFmpeg integration, stock media — and, within keyframes, the animation
+graph editor and dragging diamonds on the timeline. All of it is tracked individually in
 [`docs/02-feature-coverage.md`](docs/02-feature-coverage.md) with a status and a
 target phase — nothing has been quietly dropped.
 
@@ -41,7 +42,8 @@ render contract, and the two UI guarantees the PRD is most specific about.
 ## Building
 
 ```bash
-./gradlew test              # 97 unit tests: engine, keyframes, timebase, device policy, copy audit
+./gradlew test              # 189 unit tests
+./gradlew test -Papex.sampleVideo=/path/to/clip.mp4   # also check the fixture against real media
 ./gradlew :app:lintDebug
 ./gradlew assembleDebug     # → app/build/outputs/apk/debug/app-debug.apk (~24 MB)
 ```
@@ -92,6 +94,13 @@ and RTL.
 a plain-language tooltip and a full accessibility description as non-null
 parameters, and a unit test reads the string catalogue to catch empty, lazy, or
 vague copy.
+
+**Tests run against a real recording's numbers.** The engine and data tests use
+the measurements of an actual 33-second clip — 576×640 at exactly 30 fps, with
+video and audio tracks 24 ms different in length — rather than round synthetic
+figures. That caught two bugs synthetic fixtures had not: a lossy microsecond
+conversion costing 28 ms of animation drift, and a composition that threw
+whenever a track's first clip did not start at zero.
 
 **No `INTERNET` permission.** The offline and privacy claims are verifiable from
 the built APK rather than from a policy document — the app has no network egress

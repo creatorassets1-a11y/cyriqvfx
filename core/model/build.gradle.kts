@@ -3,6 +3,9 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
+    // Test fixtures, so the sample-video constants live in one place instead of
+    // being copied into every module that tests against them.
+    `java-test-fixtures`
 }
 
 // Deliberately a plain JVM module. The document model must not reach for an

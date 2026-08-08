@@ -102,8 +102,8 @@ professional editing · **P3** captions and polish · **P4** hardening.
 | On-screen transform handles on the preview | Planned | P2 | Values are editable by slider today |
 | Crop | Modelled | P2 | `Transform.cropLeft/Top/Right/Bottom` stored, not yet rendered |
 | Keyframeable transform (position, scale, rotation) | Built | P2 | `engine/animation`, `KeyframedTransformation` — preview and export share one effect |
-| Keyframeable opacity | Modelled | P2 | Stored, evaluated and resolved by `composeFrame`; the **renderer applies only the static value** — an animated alpha needs a shader program, not a matrix |
-| Keyframeable volume | Modelled | P2 | Stored and evaluated; `Composition` does not yet carry a time-varying gain |
+| Keyframeable opacity | Built | P2 | `KeyframedAlphaEffect` — a `GlEffect` setting `uAlphaScale` per frame. The GLSL is Media3's own alpha-scale shader; **the shader itself is unverified without a GPU**, only its uniform computation is unit-tested |
+| Keyframeable volume | Built | P2 | `KeyframedGainProcessor` — a `BaseAudioProcessor`. Pure buffer maths, so it is verified sample-by-sample against the interpolator |
 | Chroma key with tolerance/edge/spill/shadow | Planned | P2 | FFmpeg `chromakey` |
 | Masks: rectangle, ellipse, freehand, text, linear | Planned | P2 | — |
 | Mask feather, invert, track matte | Planned | P2 | — |

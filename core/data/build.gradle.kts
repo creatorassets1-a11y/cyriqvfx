@@ -45,4 +45,18 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    // Robolectric runs the Android framework on the JVM. This host has no
+    // hardware virtualisation, so it is the only way to test Room, file I/O and
+    // media metadata parsing without a device.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.room.testing)
+    testImplementation(testFixtures(project(":core:model")))
+    testImplementation(project(":core:engine"))
+}
+
+android {
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }

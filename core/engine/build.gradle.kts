@@ -17,6 +17,7 @@ kotlin {
 dependencies {
     api(project(":core:model"))
     testImplementation(libs.junit)
+    testImplementation(testFixtures(project(":core:model")))
 }
 
 tasks.withType<Test>().configureEach { useJUnit() }

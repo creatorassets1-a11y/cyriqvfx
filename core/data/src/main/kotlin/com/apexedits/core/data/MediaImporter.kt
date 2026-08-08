@@ -66,7 +66,13 @@ class MediaImporter(
             val hasAudio = retriever.extract(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes"
             val frameRate = retriever.extract(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
                 ?.toFloatOrNull() ?: 0f
-            val mimeType = context.contentResolver.getType(uri).orEmpty()
+            // Not every provider reports a type — a document picked from some
+            // file managers comes back null — so fall back to what the container
+            // declares about itself. Without this, a perfectly readable image
+            // fails to import for want of a MIME string.
+            val mimeType = context.contentResolver.getType(uri)
+                ?: retriever.extract(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
+                ?: ""
 
             val kind = when {
                 mimeType.startsWith("image/") -> MediaKind.IMAGE

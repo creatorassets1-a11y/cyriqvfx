@@ -58,39 +58,17 @@ class KeyframedTransformation(
     private val matrix = Matrix()
 
     override fun getMatrix(presentationTimeUs: Long): Matrix {
-        // Media3 reports time relative to the start of this item's own media,
-        // and the engine stores keyframes relative to the start of the clip.
-        // Those coincide because one EditedMediaItem is built per clip, clipped
-        // to its source window — see CompositionBuilder.
-        val timeInClip = Ticks.ofMicros(presentationTimeUs.coerceAtLeast(0L))
-        val time = clip.timelineStart + timeInClip
-
-        val translateX = clip.valueAt(AnimatableProperty.POSITION_X, time) / halfWidth
-        val translateY = clip.valueAt(AnimatableProperty.POSITION_Y, time) / halfHeight
-        val scaleX = clip.valueAt(AnimatableProperty.SCALE_X, time)
-        val scaleY = clip.valueAt(AnimatableProperty.SCALE_Y, time)
-        val rotation = clip.valueAt(AnimatableProperty.ROTATION, time)
+        val values = transformValuesAt(clip, presentationTimeUs, halfWidth, halfHeight, aspect)
 
         matrix.reset()
-
-        // Applied in the order the reader expects: translate last so a moving
-        // clip moves in frame space rather than in its own rotated space.
-        matrix.postScale(
-            scaleX * if (clip.transform.flipHorizontal) -1f else 1f,
-            scaleY * if (clip.transform.flipVertical) -1f else 1f,
-        )
-
-        if (rotation != 0f) {
+        matrix.postScale(values.scaleX, values.scaleY)
+        if (values.rotationDegrees != 0f) {
             // Square up, rotate, un-square, so the picture turns instead of shearing.
             matrix.postScale(1f, 1f / aspect)
-            matrix.postRotate(rotation)
+            matrix.postRotate(values.rotationDegrees)
             matrix.postScale(1f, aspect)
         }
-
-        // Y is inverted because NDC points up while screen coordinates — and
-        // therefore the position values the user drags — point down.
-        matrix.postTranslate(translateX, -translateY)
-
+        matrix.postTranslate(values.translateX, values.translateY)
         return matrix
     }
 
@@ -130,4 +108,50 @@ class KeyframedTransformation(
             AnimatableProperty.ROTATION,
         )
     }
+}
+
+/**
+ * The values [KeyframedTransformation] feeds into its matrix, as plain numbers.
+ *
+ * Extracted from the matrix call so the arithmetic that is easy to get wrong —
+ * the pixel-to-NDC conversion and the Y inversion — can be asserted on the JVM.
+ * `android.graphics.Matrix` needs a device; this does not.
+ */
+data class TransformValues(
+    val translateX: Float,
+    val translateY: Float,
+    val scaleX: Float,
+    val scaleY: Float,
+    val rotationDegrees: Float,
+)
+
+/**
+ * Resolves [clip]'s transform at [presentationTimeUs] into normalised device
+ * coordinates.
+ *
+ * Media3 draws into x ∈ [-1, 1], y ∈ [-1, 1] with the origin at the centre, so
+ * position keyframes — authored in pixels against the project frame — are divided
+ * by half the frame size. Y is negated because NDC points up while the on-screen
+ * values the user drags point down.
+ *
+ * Flips fold into scale as a negative factor, which costs nothing extra in the
+ * matrix and avoids a second pass over the frame.
+ */
+fun transformValuesAt(
+    clip: Clip,
+    presentationTimeUs: Long,
+    halfWidth: Float,
+    halfHeight: Float,
+    aspect: Float,
+): TransformValues {
+    val time = clip.timelineStart + Ticks.ofMicros(presentationTimeUs.coerceAtLeast(0L))
+    return TransformValues(
+        translateX = clip.valueAt(AnimatableProperty.POSITION_X, time) / halfWidth,
+        translateY = -clip.valueAt(AnimatableProperty.POSITION_Y, time) / halfHeight,
+        scaleX = clip.valueAt(AnimatableProperty.SCALE_X, time) *
+            if (clip.transform.flipHorizontal) -1f else 1f,
+        scaleY = clip.valueAt(AnimatableProperty.SCALE_Y, time) *
+            if (clip.transform.flipVertical) -1f else 1f,
+        rotationDegrees = clip.valueAt(AnimatableProperty.ROTATION, time),
+    )
 }

@@ -37,4 +37,13 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(testFixtures(project(":core:model")))
+}
+
+android {
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
