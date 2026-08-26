@@ -1,7 +1,19 @@
 node_modules/
 dist/
-.DS_Store
+build/
+.env
+.env.*
+!.env.example
 *.log
-.vite/
+.DS_Store
 coverage/
-dist-standalone/
+playwright-report/
+test-results/
+.storage/
+backend/prisma/generated/
+.vite/
+*.tsbuildinfo
+
+# Local dev process state
+.run/
+.storage-test/

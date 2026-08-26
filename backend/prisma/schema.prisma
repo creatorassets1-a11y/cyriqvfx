@@ -1,0 +1,724 @@
+// Creator Resource Platform, domain model
+// PostgreSQL stores all metadata/relationships. Binary files live in Cloudflare R2.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+model User {
+  id              String     @id @default(cuid())
+  email           String     @unique
+  username        String     @unique
+  displayName     String
+  passwordHash    String
+  role            Role       @default(USER)
+  status          UserStatus @default(ACTIVE)
+  emailVerifiedAt DateTime?
+  suspendedAt     DateTime?
+  suspendedReason String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  sessions      Session[]
+  emailTokens   EmailToken[]
+  downloads     DownloadEvent[]
+  saved         SavedResource[]
+  notifications Notification[]
+  preference    NotificationPreference?
+  reports       Report[]
+  auditLogs     AuditLog[]
+  requests      ResourceRequest[]
+  requestVotes  ResourceRequestVote[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  userAgent  String?
+  ipHash     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+enum EmailTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+model EmailToken {
+  id        String         @id @default(cuid())
+  userId    String
+  type      EmailTokenType
+  tokenHash String         @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Taxonomy
+// ---------------------------------------------------------------------------
+
+enum CategoryStatus {
+  ACTIVE
+  HIDDEN
+  ARCHIVED
+}
+
+model Category {
+  id             String         @id @default(cuid())
+  name           String
+  slug           String         @unique
+  description    String?
+  icon           String?
+  position       Int            @default(0)
+  status         CategoryStatus @default(ACTIVE)
+  seoTitle       String?
+  seoDescription String?
+  parentId       String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  parent       Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Category[] @relation("CategoryTree")
+  resources    Resource[] @relation("ResourceCategory")
+  subResources Resource[] @relation("ResourceSubcategory")
+  tutorials    Tutorial[]
+
+  @@index([status, position])
+  @@index([parentId])
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  resources ResourceTag[]
+  tutorials TutorialTag[]
+}
+
+model Software {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  resources ResourceSoftware[]
+  tutorials TutorialSoftware[]
+}
+
+model License {
+  id                  String   @id @default(cuid())
+  name                String
+  slug                String   @unique
+  summary             String
+  personalUse         Boolean  @default(true)
+  commercialUse       Boolean  @default(false)
+  modification        Boolean  @default(true)
+  redistribution      Boolean  @default(false)
+  resale              Boolean  @default(false)
+  attributionRequired Boolean  @default(false)
+  customText          String?
+  isDefault           Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  resources Resource[]
+}
+
+// ---------------------------------------------------------------------------
+// Resources
+// ---------------------------------------------------------------------------
+
+enum ContentStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  UNLISTED
+  ARCHIVED
+}
+
+enum PreviewType {
+  VIDEO
+  IMAGE
+  BEFORE_AFTER
+  AUDIO
+  GALLERY
+  NONE
+}
+
+enum QualityFlag {
+  FEATURED
+  CREATOR_PICK
+  BEGINNER_FRIENDLY
+  ADVANCED
+  EXPERIMENTAL
+}
+
+model Resource {
+  id                  String        @id @default(cuid())
+  publicDownloadToken String        @unique
+  title               String
+  slug                String        @unique
+  shortDescription    String
+  fullDescription     String        @default("")
+  categoryId          String
+  subcategoryId       String?
+  status              ContentStatus @default(DRAFT)
+  featured            Boolean       @default(false)
+  qualityFlags        QualityFlag[] @default([])
+  publishedAt         DateTime?
+  scheduledFor        DateTime?
+  licenseId           String?
+  installationGuide   String        @default("")
+  requirements        String        @default("")
+  format              String?
+  previewType         PreviewType   @default(NONE)
+  thumbnailKey        String?
+  previewKey          String?
+  previewPosterKey    String?
+  previewBeforeKey    String?
+  previewAfterKey     String?
+  ogImageKey          String?
+  seoTitle            String?
+  seoDescription      String?
+  downloadCount       Int           @default(0)
+  viewCount           Int           @default(0)
+  saveCount           Int           @default(0)
+  currentVersionId    String?       @unique
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  category       Category            @relation("ResourceCategory", fields: [categoryId], references: [id])
+  subcategory    Category?           @relation("ResourceSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
+  license        License?            @relation(fields: [licenseId], references: [id], onDelete: SetNull)
+  currentVersion ResourceVersion?    @relation("CurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  versions       ResourceVersion[]   @relation("ResourceVersions")
+  tags           ResourceTag[]
+  software       ResourceSoftware[]
+  galleryItems   ResourceMedia[]
+  downloads      DownloadEvent[]
+  saves          SavedResource[]
+  tutorials      TutorialResource[]
+  reports        Report[]
+  views          ResourceView[]
+  relatedFrom    RelatedResource[]   @relation("RelatedFrom")
+  relatedTo      RelatedResource[]   @relation("RelatedTo")
+  changelogLinks ChangelogResource[]
+
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([categoryId, status])
+  @@index([featured, status])
+  @@index([downloadCount(sort: Desc)])
+  @@index([updatedAt(sort: Desc)])
+  @@index([scheduledFor])
+  @@index([title])
+}
+
+model ResourceVersion {
+  id            String   @id @default(cuid())
+  resourceId    String
+  version       String
+  releaseNotes  String   @default("")
+  objectKey     String
+  originalName  String
+  fileSize      BigInt
+  checksum      String?
+  contentType   String
+  compatibility String   @default("")
+  retired       Boolean  @default(false)
+  publishedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  resource  Resource        @relation("ResourceVersions", fields: [resourceId], references: [id], onDelete: Cascade)
+  currentOf Resource?       @relation("CurrentVersion")
+  downloads DownloadEvent[]
+
+  @@unique([resourceId, version])
+  @@index([resourceId, publishedAt(sort: Desc)])
+  @@index([checksum])
+}
+
+model ResourceMedia {
+  id          String   @id @default(cuid())
+  resourceId  String
+  objectKey   String
+  contentType String
+  caption     String?
+  position    Int      @default(0)
+  width       Int?
+  height      Int?
+  createdAt   DateTime @default(now())
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([resourceId, position])
+}
+
+model ResourceTag {
+  resourceId String
+  tagId      String
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  tag      Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([resourceId, tagId])
+  @@index([tagId])
+}
+
+model ResourceSoftware {
+  resourceId String
+  softwareId String
+  minVersion String?
+  note       String?
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  software Software @relation(fields: [softwareId], references: [id], onDelete: Cascade)
+
+  @@id([resourceId, softwareId])
+  @@index([softwareId])
+}
+
+model RelatedResource {
+  fromId   String
+  toId     String
+  position Int    @default(0)
+
+  from Resource @relation("RelatedFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to   Resource @relation("RelatedTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@id([fromId, toId])
+  @@index([toId])
+}
+
+// ---------------------------------------------------------------------------
+// Tutorials
+// ---------------------------------------------------------------------------
+
+enum SkillLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+model Tutorial {
+  id              String        @id @default(cuid())
+  title           String
+  slug            String        @unique
+  summary         String
+  body            String        @default("")
+  coverKey        String?
+  videoKey        String?
+  videoUrl        String?
+  durationSeconds Int?
+  categoryId      String?
+  skillLevel      SkillLevel    @default(BEGINNER)
+  status          ContentStatus @default(DRAFT)
+  featured        Boolean       @default(false)
+  transcript      String?
+  seoTitle        String?
+  seoDescription  String?
+  ogImageKey      String?
+  viewCount       Int           @default(0)
+  publishedAt     DateTime?
+  scheduledFor    DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  category       Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  steps          TutorialStep[]
+  resources      TutorialResource[]
+  tags           TutorialTag[]
+  software       TutorialSoftware[]
+  changelogLinks ChangelogTutorial[]
+
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([categoryId, status])
+  @@index([featured, status])
+  @@index([scheduledFor])
+}
+
+model TutorialStep {
+  id               String @id @default(cuid())
+  tutorialId       String
+  position         Int
+  title            String
+  body             String @default("")
+  timestampSeconds Int?
+
+  tutorial Tutorial @relation(fields: [tutorialId], references: [id], onDelete: Cascade)
+
+  @@index([tutorialId, position])
+}
+
+model TutorialResource {
+  tutorialId String
+  resourceId String
+  position   Int     @default(0)
+  note       String?
+
+  tutorial Tutorial @relation(fields: [tutorialId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@id([tutorialId, resourceId])
+  @@index([resourceId])
+}
+
+model TutorialTag {
+  tutorialId String
+  tagId      String
+
+  tutorial Tutorial @relation(fields: [tutorialId], references: [id], onDelete: Cascade)
+  tag      Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([tutorialId, tagId])
+  @@index([tagId])
+}
+
+model TutorialSoftware {
+  tutorialId String
+  softwareId String
+
+  tutorial Tutorial @relation(fields: [tutorialId], references: [id], onDelete: Cascade)
+  software Software @relation(fields: [softwareId], references: [id], onDelete: Cascade)
+
+  @@id([tutorialId, softwareId])
+  @@index([softwareId])
+}
+
+// ---------------------------------------------------------------------------
+// User activity
+// ---------------------------------------------------------------------------
+
+enum DownloadStatus {
+  ISSUED
+  FAILED
+}
+
+model DownloadEvent {
+  id          String         @id @default(cuid())
+  resourceId  String
+  versionId   String?
+  userId      String?
+  sessionKey  String
+  status      DownloadStatus @default(ISSUED)
+  country     String?
+  deviceClass String?
+  referrer    String?
+  createdAt   DateTime       @default(now())
+
+  resource Resource         @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  version  ResourceVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)
+  user     User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([resourceId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([resourceId, sessionKey, createdAt])
+}
+
+model SavedResource {
+  userId     String
+  resourceId String
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@id([userId, resourceId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([resourceId])
+}
+
+model ResourceView {
+  id         String   @id @default(cuid())
+  resourceId String
+  sessionKey String
+  createdAt  DateTime @default(now())
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([resourceId, createdAt])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+enum NotificationType {
+  NEW_RESOURCE
+  RESOURCE_UPDATED
+  TUTORIAL_PUBLISHED
+  ANNOUNCEMENT
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  link      String
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model NotificationPreference {
+  userId          String   @id
+  enabled         Boolean  @default(true)
+  newResource     Boolean  @default(true)
+  resourceUpdates Boolean  @default(true)
+  tutorials       Boolean  @default(true)
+  announcements   Boolean  @default(true)
+  emailEnabled    Boolean  @default(false)
+  categoryIds     String[] @default([])
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Uploads
+// ---------------------------------------------------------------------------
+
+enum UploadStatus {
+  PENDING
+  UPLOADING
+  COMPLETED
+  ABORTED
+  FAILED
+}
+
+model UploadSession {
+  id           String       @id @default(cuid())
+  objectKey    String
+  originalName String
+  contentType  String
+  declaredSize BigInt
+  purpose      String
+  multipart    Boolean      @default(false)
+  uploadId     String?
+  status       UploadStatus @default(PENDING)
+  checksum     String?
+  createdBy    String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  completedAt  DateTime?
+
+  @@index([status, createdAt])
+  @@index([createdBy])
+}
+
+// ---------------------------------------------------------------------------
+// Moderation / admin
+// ---------------------------------------------------------------------------
+
+enum ReportReason {
+  BROKEN_RESOURCE
+  BROKEN_DOWNLOAD
+  INCORRECT_COMPATIBILITY
+  LICENSING
+  MALICIOUS_FILE
+  COPYRIGHT
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
+model Report {
+  id           String       @id @default(cuid())
+  resourceId   String?
+  userId       String?
+  reason       ReportReason
+  details      String
+  contactEmail String?
+  status       ReportStatus @default(OPEN)
+  adminNote    String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  resource Resource? @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([resourceId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorLabel String
+  action     String
+  targetType String?
+  targetId   String?
+  metadata   Json?
+  ipHash     String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([action, createdAt(sort: Desc)])
+  @@index([actorId])
+}
+
+model SiteSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Changelog / requests
+// ---------------------------------------------------------------------------
+
+enum ChangelogKind {
+  RELEASE
+  UPDATE
+  SITE
+  ANNOUNCEMENT
+}
+
+model ChangelogEntry {
+  id          String        @id @default(cuid())
+  title       String
+  slug        String        @unique
+  body        String
+  kind        ChangelogKind @default(RELEASE)
+  status      ContentStatus @default(DRAFT)
+  publishedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  resources ChangelogResource[]
+  tutorials ChangelogTutorial[]
+
+  @@index([status, publishedAt(sort: Desc)])
+}
+
+model ChangelogResource {
+  entryId    String
+  resourceId String
+
+  entry    ChangelogEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  resource Resource       @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, resourceId])
+  @@index([resourceId])
+}
+
+model ChangelogTutorial {
+  entryId    String
+  tutorialId String
+
+  entry    ChangelogEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  tutorial Tutorial       @relation(fields: [tutorialId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, tutorialId])
+  @@index([tutorialId])
+}
+
+enum RequestStatus {
+  RECEIVED
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  DECLINED
+}
+
+model ResourceRequest {
+  id          String        @id @default(cuid())
+  title       String
+  description String
+  categoryId  String?
+  software    String?
+  status      RequestStatus @default(RECEIVED)
+  adminNote   String?
+  voteCount   Int           @default(0)
+  userId      String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  user  User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  votes ResourceRequestVote[]
+
+  @@index([status, voteCount(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+}
+
+model ResourceRequestVote {
+  requestId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  request ResourceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([requestId, userId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Search analytics (§66: "what do people want")
+// ---------------------------------------------------------------------------
+
+model SearchQuery {
+  id          String   @id @default(cuid())
+  query       String
+  resultCount Int
+  userId      String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([resultCount, createdAt(sort: Desc)])
+  @@index([query])
+}
