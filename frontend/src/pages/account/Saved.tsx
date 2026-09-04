@@ -1,70 +1,80 @@
 import { useState } from 'react';
-import { useDebounced, useFetch } from '../../lib/hooks';
-import type { Paged, ResourceCard as ResourceCardType } from '../../lib/api';
-import { ResourceCard } from '../../components/ResourceCard';
-import { Button, EmptyState, LinkButton, Skeleton } from '../../components/ui';
-import { Icon } from '../../components/Icon';
+import { api, ApiError } from '../../lib/api';
+import { useLoad, useTitle } from '../../lib/hooks';
+import type { Paged, ResourceCard as Card } from '../../lib/types';
+import { CardGrid, CardGridSkeleton, ResourceCard } from '../../components/ResourceCard';
+import { PageError } from '../../components/Chrome';
+import { Icon } from '../../ui/Icon';
+import { ButtonLink, Empty, Pagination } from '../../ui/primitives';
+import { useToast } from '../../ui/Toast';
 
-/** Saved resources (PRD §20). */
+/** Saved resources, with the one control that belongs here: unsaving. */
 export default function Saved() {
-  const [search, setSearch] = useState('');
-  const debounced = useDebounced(search, 300);
   const [page, setPage] = useState(1);
-
-  const query = new URLSearchParams({ page: String(page), perPage: '20' });
-  if (debounced) query.set('q', debounced);
-  const { data, loading } = useFetch<Paged<ResourceCardType & { savedAt: string }>>(
-    `/me/saved?${query}`,
-    [debounced, page],
+  const { toast } = useToast();
+  const { data, error, loading, reload, set } = useLoad<Paged<Card>>(
+    `/me/saved${page > 1 ? `?page=${page}` : ''}`,
   );
 
-  if (loading && !data) return <Skeleton className="h-64 w-full" />;
+  useTitle('Saved · Cyriq VFX');
+
+  async function remove(resource: Card) {
+    // Removed on screen first: the request is a formality the page should not
+    // make anyone watch.
+    if (data) set({ ...data, items: data.items.filter((item) => item.id !== resource.id) });
+
+    try {
+      await api.delete(`/me/saved/${resource.id}`);
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'That could not be removed.', 'error');
+      reload();
+    }
+  }
+
+  if (error) return <PageError onRetry={reload} />;
 
   return (
-    <div>
-      <div className="mb-7 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b border-ink pb-3">
-        <h2 className="text-[26px] md:text-[30px]">Saved</h2>
-        <div className="min-w-0 flex-1 sm:max-w-xs">
-          <label htmlFor="saved-search" className="sr-only">Search saved resources</label>
-          <div className="flex items-center gap-2 border-b border-rule-strong pb-1.5 transition-colors duration-fast focus-within:border-blue hover:border-ink">
-            <Icon name="search" size={15} className="shrink-0 text-ghost" />
-            <input
-              id="saved-search"
-              type="search"
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              placeholder="Search saved"
-              className="w-full min-w-0 border-0 bg-transparent p-0 text-[14px] text-ink placeholder:text-ghost focus:outline-none focus:ring-0"
-            />
-          </div>
-        </div>
-      </div>
+    <>
+      <header className="mb-7">
+        <h1 className="text-[30px]">Saved</h1>
+        <p className="mt-1.5 text-[13.5px] text-text-3">
+          Resources you have kept for later.
+        </p>
+      </header>
 
-      {!data || data.items.length === 0 ? (
-        <EmptyState
-          icon="bookmark"
-          title={debounced ? 'Nothing matched that' : 'Save resources you want to revisit'}
-          description={
-            debounced
-              ? 'Try a different word.'
-              : 'Tap the bookmark on any resource and it will be waiting here.'
-          }
-          action={!debounced ? <LinkButton to="/resources" variant="primary">Browse resources</LinkButton> : undefined}
-        />
-      ) : (
+      {loading && !data ? (
+        <CardGridSkeleton count={4} />
+      ) : data && data.items.length ? (
         <>
-          <div className="grid grid-cols-1 gap-x-8 gap-y-10 min-[560px]:grid-cols-2 xl:grid-cols-3">
-            {data.items.map((r) => (
-              <ResourceCard key={r.id} resource={r} />
+          <CardGrid>
+            {data.items.map((resource) => (
+              <ResourceCard
+                key={resource.id}
+                resource={resource}
+                action={
+                  <button
+                    type="button"
+                    onClick={() => remove(resource)}
+                    aria-label={`Remove ${resource.title} from saved`}
+                    className="flex h-8 w-8 items-center justify-center rounded-full border border-line-strong bg-ground/80 text-text-2 backdrop-blur transition-colors duration-fast ease-out hover:border-critical hover:text-critical"
+                  >
+                    <Icon name="close" size={14} />
+                  </button>
+                }
+              />
             ))}
-          </div>
-          {data.hasMore ? (
-            <div className="mt-10 flex justify-center border-t border-rule pt-6">
-              <Button onClick={() => setPage((p) => p + 1)} loading={loading}>Load more</Button>
-            </div>
-          ) : null}
+          </CardGrid>
+
+          <Pagination page={data.page} totalPages={data.totalPages} onPage={setPage} />
         </>
+      ) : (
+        <Empty
+          icon="bookmark"
+          title="Nothing saved yet"
+          body="Save resources you want to revisit and they will wait here for you."
+          action={<ButtonLink to="/resources" variant="primary">Browse the library</ButtonLink>}
+        />
       )}
-    </div>
+    </>
   );
 }

@@ -1,74 +1,79 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, ApiError, type Category, type ResourceDetail } from '../../lib/api';
-import { useFetch } from '../../lib/hooks';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { api, ApiError } from '../../lib/api';
+import { useLoad, useTitle } from '../../lib/hooks';
+import type {
+  AdminResource,
+  Category,
+  ContentStatus,
+  License,
+  PreviewType,
+  QualityFlag,
+  Software,
+} from '../../lib/types';
+import { formatDate, statusLabel } from '../../lib/format';
+import { FileDrop, type CompletedUpload } from '../../components/admin/FileUpload';
+import { PageError } from '../../components/Chrome';
+import { Confirm, Dialog } from '../../ui/Dialog';
 import {
-  Marker,
   Button,
-  ConfirmDialog,
-  cx,
-  Dialog,
-  Block,
-  SelectField,
+  Check,
+  Field,
+  Input,
+  Marker,
+  Note,
+  Select,
   Skeleton,
-  TextArea,
-  TextField,
-  Toggle,
-  useToast,
-} from '../../components/ui';
-import { Icon } from '../../components/Icon';
-import { Uploader, type CompletedUpload } from '../../components/admin/Uploader';
-import { formatBytes, formatDate } from '../../lib/format';
+  Textarea,
+  cx,
+} from '../../ui/primitives';
 
 /**
- * Resource editor (PRD §44).
+ * Writing a resource.
  *
- * Grouped sections rather than one giant form, autosave on the draft so a long
- * description is never lost, and publishing gated on actually having a file.
+ * One screen holds the whole thing: the copy, the taxonomy, the file, the
+ * versions and the publishing decision. Nothing here can put the site into a
+ * state that lies to a visitor — publishing is refused until there is a file
+ * to download, and the reason is on screen long before the button is pressed.
  */
 
-const SECTIONS = [
-  { id: 'identity', label: 'Identity' },
-  { id: 'description', label: 'Description' },
-  { id: 'media', label: 'Media' },
-  { id: 'compatibility', label: 'Compatibility' },
-  { id: 'files', label: 'Files' },
-  { id: 'installation', label: 'Installation' },
-  { id: 'license', label: 'License' },
-  { id: 'seo', label: 'Discovery' },
-  { id: 'publishing', label: 'Publishing' },
-] as const;
+const PREVIEW_TYPES: PreviewType[] = ['NONE', 'IMAGE', 'VIDEO', 'BEFORE_AFTER', 'AUDIO', 'GALLERY'];
+const FLAGS: QualityFlag[] = [
+  'FEATURED',
+  'CREATOR_PICK',
+  'BEGINNER_FRIENDLY',
+  'ADVANCED',
+  'EXPERIMENTAL',
+];
 
-interface Form {
+interface Draft {
   title: string;
   slug: string;
   shortDescription: string;
   fullDescription: string;
   categoryId: string;
-  subcategoryId: string | null;
-  licenseId: string | null;
+  subcategoryId: string;
+  licenseId: string;
   installationGuide: string;
   requirements: string;
   format: string;
-  previewType: ResourceDetail['previewType'];
+  previewType: PreviewType;
   featured: boolean;
-  qualityFlags: string[];
+  qualityFlags: QualityFlag[];
   seoTitle: string;
   seoDescription: string;
-  tags: string[];
-  software: Array<{ softwareId: string; minVersion: string | null; note: string | null }>;
-  relatedIds: string[];
-  tutorialIds: string[];
+  tags: string;
+  softwareIds: string[];
 }
 
-const EMPTY: Form = {
+const EMPTY: Draft = {
   title: '',
   slug: '',
   shortDescription: '',
   fullDescription: '',
   categoryId: '',
-  subcategoryId: null,
-  licenseId: null,
+  subcategoryId: '',
+  licenseId: '',
   installationGuide: '',
   requirements: '',
   format: '',
@@ -77,1020 +82,789 @@ const EMPTY: Form = {
   qualityFlags: [],
   seoTitle: '',
   seoDescription: '',
-  tags: [],
-  software: [],
-  relatedIds: [],
-  tutorialIds: [],
+  tags: '',
+  softwareIds: [],
 };
 
-type SaveState = 'idle' | 'saving' | 'saved' | 'error';
-
 export default function ResourceEditor() {
-  const { id } = useParams<{ id: string }>();
+  const params = useParams<{ id: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
-  const { toast } = useToast();
-  const isNew = !id;
 
-  const [form, setForm] = useState<Form>(EMPTY);
-  const [resourceId, setResourceId] = useState<string | null>(id ?? null);
-  const [loaded, setLoaded] = useState(isNew);
-  const [saveState, setSaveState] = useState<SaveState>('idle');
-  const [error, setError] = useState<ApiError | null>(null);
-  const [section, setSection] = useState<string>('identity');
-  const dirtyRef = useRef(false);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [id, setId] = useState<string | null>(params.id ?? null);
+  const [draft, setDraft] = useState<Draft>(EMPTY);
+  const [message, setMessage] = useState<string | null>(null);
+  const [failure, setFailure] = useState<ApiError | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [versionOpen, setVersionOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const { data: categories } = useFetch<{ items: Category[] }>('/admin/taxonomy/categories');
-  const { data: softwareList } = useFetch<{ items: Array<{ id: string; name: string }> }>(
-    '/admin/taxonomy/software',
-  );
-  const { data: licenses } = useFetch<{ items: Array<{ id: string; name: string; isDefault: boolean }> }>(
-    '/admin/taxonomy/licenses',
-  );
-  const { data: existing, reload: reloadResource } = useFetch<{
-    resource: ResourceDetail & {
-      allVersions: Array<{
-        id: string;
-        version: string;
-        releaseNotes: string;
-        fileSizeLabel: string;
-        originalName: string;
-        checksum: string | null;
-        retired: boolean;
-        isCurrent: boolean;
-        publishedAt: string;
-      }>;
-      relatedIds: string[];
-      tutorialIds: string[];
-      scheduledFor: string | null;
-    };
-  }>(resourceId ? `/admin/resources/${resourceId}` : null);
+  const resource = useLoad<{ resource: AdminResource }>(id ? `/admin/resources/${id}` : null);
+  const categories = useLoad<{ items: Category[] }>('/admin/taxonomy/categories');
+  const software = useLoad<{ items: Software[] }>('/admin/taxonomy/software');
+  const licenses = useLoad<{ items: License[] }>('/admin/taxonomy/licenses');
 
-  // Hydrate the form once the resource arrives.
+  const loaded = resource.data?.resource ?? null;
+  useTitle(loaded ? `${loaded.title} · Owner tools` : 'New resource · Owner tools');
+
+  // A message set just before a navigation (creating, for instance) travels
+  // with the location so it survives the route change that follows it.
   useEffect(() => {
-    if (!existing?.resource || loaded) return;
-    const r = existing.resource;
-    setForm({
-      title: r.title,
-      slug: r.slug,
-      shortDescription: r.shortDescription,
-      fullDescription: r.fullDescription,
-      categoryId: r.category.id,
-      subcategoryId: r.subcategory?.id ?? null,
-      licenseId: r.license?.id ?? null,
-      installationGuide: r.installationGuide,
-      requirements: r.requirements,
-      format: r.format ?? '',
-      previewType: r.previewType,
-      featured: r.featured,
-      qualityFlags: r.qualityFlags,
-      seoTitle: r.seoTitle ?? '',
-      seoDescription: r.seoDescription ?? '',
-      tags: r.tags.map((t) => t.name),
-      software: r.softwareCompatibility.map((s) => ({
-        softwareId: s.id,
-        minVersion: s.minVersion,
-        note: s.note,
-      })),
-      relatedIds: r.relatedIds,
-      tutorialIds: r.tutorialIds,
+    const flash = (location.state as { flash?: string } | null)?.flash;
+    if (flash) setMessage(flash);
+  }, [location.state]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    setDraft({
+      title: loaded.title,
+      slug: loaded.slug,
+      shortDescription: loaded.shortDescription,
+      fullDescription: loaded.fullDescription,
+      categoryId: loaded.category.id,
+      subcategoryId: loaded.subcategory?.id ?? '',
+      licenseId: loaded.license?.id ?? '',
+      installationGuide: loaded.installationGuide,
+      requirements: loaded.requirements,
+      format: loaded.format ?? '',
+      previewType: loaded.previewType,
+      featured: loaded.featured,
+      qualityFlags: loaded.qualityFlags,
+      seoTitle: loaded.seoTitle ?? '',
+      seoDescription: loaded.seoDescription ?? '',
+      tags: loaded.tags.map((tag) => tag.name).join(', '),
+      softwareIds: loaded.softwareCompatibility.map((item) => item.id),
     });
-    setLoaded(true);
-  }, [existing, loaded]);
+  }, [loaded]);
 
-  // Default the category and license so a new resource starts usable.
+  // A new resource needs a category, and the first one is a better default
+  // than an empty select that fails validation on the first save.
   useEffect(() => {
-    if (!isNew) return;
-    setForm((f) => ({
-      ...f,
-      categoryId: f.categoryId || categories?.items[0]?.id || '',
-      licenseId: f.licenseId ?? licenses?.items.find((l) => l.isDefault)?.id ?? null,
-    }));
-  }, [isNew, categories, licenses]);
+    if (id || draft.categoryId || !categories.data?.items.length) return;
+    setDraft((current) => ({ ...current, categoryId: categories.data!.items[0].id }));
+  }, [id, draft.categoryId, categories.data]);
 
-  const persist = useCallback(
-    async (next: Form, options: { silent?: boolean } = {}) => {
-      if (!next.title.trim() || !next.shortDescription.trim() || !next.categoryId) return;
-      setSaveState('saving');
-      setError(null);
-      try {
-        const payload = {
-          ...next,
-          format: next.format || null,
-          seoTitle: next.seoTitle || null,
-          seoDescription: next.seoDescription || null,
-        };
-        if (resourceId) {
-          await api.patch(`/admin/resources/${resourceId}`, payload);
-        } else {
-          const created = await api.post<{ resource: ResourceDetail }>('/admin/resources', payload);
-          setResourceId(created.resource.id);
-          // Move to the real edit URL without losing what is on screen.
-          navigate(`/admin/resources/${created.resource.id}`, { replace: true });
-        }
-        dirtyRef.current = false;
-        setSaveState('saved');
-        if (!options.silent) toast('Saved.', 'success');
-        setTimeout(() => setSaveState((s) => (s === 'saved' ? 'idle' : s)), 2500);
-      } catch (err) {
-        setSaveState('error');
-        if (err instanceof ApiError) {
-          setError(err);
-          toast(err.message, 'error');
-        }
-      }
-    },
-    [resourceId, navigate, toast],
-  );
-
-  /** Autosave a draft so a long description survives a stray navigation. */
-  const update = useCallback(
-    (patch: Partial<Form>) => {
-      setForm((current) => {
-        const next = { ...current, ...patch };
-        dirtyRef.current = true;
-        if (saveTimer.current) clearTimeout(saveTimer.current);
-        saveTimer.current = setTimeout(() => void persist(next, { silent: true }), 1400);
-        return next;
-      });
-    },
-    [persist],
-  );
-
-  // Warn before losing unsaved work.
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (dirtyRef.current) e.preventDefault();
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => {
-      window.removeEventListener('beforeunload', handler);
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-    };
-  }, []);
-
-  const resource = existing?.resource;
   const subcategories = useMemo(
-    () => categories?.items.find((c) => c.id === form.categoryId)?.children ?? [],
-    [categories, form.categoryId],
+    () => categories.data?.items.find((item) => item.id === draft.categoryId)?.children ?? [],
+    [categories.data, draft.categoryId],
   );
 
-  if (!isNew && !loaded) return <Skeleton className="h-96 w-full" />;
+  function edit(patch: Partial<Draft>) {
+    setDraft((current) => ({ ...current, ...patch }));
+    setMessage(null);
+  }
+
+  function body() {
+    return {
+      title: draft.title,
+      slug: draft.slug || undefined,
+      shortDescription: draft.shortDescription,
+      fullDescription: draft.fullDescription,
+      categoryId: draft.categoryId,
+      subcategoryId: draft.subcategoryId || null,
+      licenseId: draft.licenseId || null,
+      installationGuide: draft.installationGuide,
+      requirements: draft.requirements,
+      format: draft.format || null,
+      previewType: draft.previewType,
+      featured: draft.featured,
+      qualityFlags: draft.qualityFlags,
+      seoTitle: draft.seoTitle || null,
+      seoDescription: draft.seoDescription || null,
+      tags: draft.tags
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+      software: draft.softwareIds.map((softwareId) => ({ softwareId })),
+      relatedIds: loaded?.relatedIds ?? [],
+      tutorialIds: loaded?.tutorialIds ?? [],
+    };
+  }
+
+  async function save() {
+    setSaving(true);
+    setFailure(null);
+
+    try {
+      if (id) {
+        await api.patch(`/admin/resources/${id}`, body());
+        setMessage('Saved.');
+        resource.reload();
+      } else {
+        const created = await api.post<{ resource: AdminResource }>('/admin/resources', body());
+        setId(created.resource.id);
+        navigate(`/admin/resources/${created.resource.id}`, {
+          replace: true,
+          state: { flash: 'Saved.' },
+        });
+        setMessage('Saved.');
+      }
+    } catch (err) {
+      if (err instanceof ApiError) setFailure(err);
+      else setMessage(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setStatus(status: ContentStatus, notify = false) {
+    setFailure(null);
+
+    try {
+      await api.post(`/admin/resources/${id}/status`, { status, notify });
+      setMessage(
+        status === 'PUBLISHED'
+          ? 'Resource published.'
+          : status === 'ARCHIVED'
+            ? 'Resource archived.'
+            : status === 'UNLISTED'
+              ? 'Resource unlisted.'
+              : 'Resource unpublished.',
+      );
+      resource.reload();
+    } catch (err) {
+      if (err instanceof ApiError) setFailure(err);
+    }
+  }
+
+  async function remove() {
+    try {
+      await api.delete(`/admin/resources/${id}`);
+      navigate('/admin/resources', { state: { flash: 'Resource deleted.' } });
+    } catch (err) {
+      if (err instanceof ApiError) setFailure(err);
+      setDeleteOpen(false);
+    }
+  }
+
+  if (resource.error) return <PageError onRetry={resource.reload} />;
+  if (id && !loaded) return <Skeleton className="h-96 w-full" />;
+
+  const hasFile = !!loaded?.allVersions.some((version) => !version.retired);
 
   return (
-    <div className="flex flex-col gap-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <Link to="/admin/resources" className="text-[13px] text-faint hover:text-ink">
-            ← Resources
+    <>
+      <header className="mb-7 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <Link to="/admin/resources" className="text-[12.5px] text-text-3 hover:text-text">
+            ← All resources
           </Link>
-          <h1 className="mt-1 truncate text-[30px] leading-tight md:text-[34px]">
-            {form.title || 'New resource'}
-          </h1>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            {resource ? <StatusBadge status={resource.status} /> : <Marker>Not saved yet</Marker>}
-            <SaveIndicator state={saveState} />
-          </div>
+          <h1 className="mt-2 text-[30px]">{loaded ? loaded.title : 'New resource'}</h1>
+          {loaded ? (
+            <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <Marker tone={loaded.status === 'PUBLISHED' ? 'positive' : 'neutral'}>
+                {statusLabel(loaded.status)}
+              </Marker>
+              <span className="font-mono text-[11.5px] text-text-4">/{loaded.slug}</span>
+              {loaded.status === 'PUBLISHED' ? (
+                <Link
+                  to={`/resources/${loaded.slug}`}
+                  className="text-[12.5px] text-accent hover:underline"
+                >
+                  View it live
+                </Link>
+              ) : null}
+            </p>
+          ) : null}
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          {resource && resource.status !== 'DRAFT' ? (
-            <a href={`/resources/${resource.slug}`} target="_blank" rel="noopener noreferrer">
-              <Button icon="external">View live</Button>
-            </a>
+        <div className="flex items-center gap-3">
+          {message ? (
+            <p role="status" className="text-[13px] text-positive">
+              {message}
+            </p>
           ) : null}
-          <Button variant="primary" icon="check" onClick={() => persist(form)} loading={saveState === 'saving'}>
+          <Button variant="primary" onClick={save} loading={saving}>
             Save
           </Button>
         </div>
       </header>
 
-      {error?.issues.length ? (
-        <div role="alert" className="rounded-md border border-[rgba(255,92,120,0.35)] bg-stop-wash p-3.5">
-          <p className="text-[13.5px] font-semibold text-stop">Fix these before saving:</p>
-          <ul className="mt-1.5 flex flex-col gap-1 text-[13px] text-soft">
-            {error.issues.map((i) => (
-              <li key={i.field}>
-                <span className="font-mono text-[12px]">{i.field}</span>: {i.message}
-              </li>
-            ))}
-          </ul>
+      {failure ? (
+        <div className="mb-6">
+          <Note tone="critical">{failure.message}</Note>
         </div>
       ) : null}
 
-      {/* Section rail keeps a long form navigable (PRD §44) */}
-      <nav aria-label="Editor sections" className="scroll-x no-bar -mx-[var(--gutter)] flex gap-1 px-[var(--gutter)] md:mx-0 md:px-0">
-        {SECTIONS.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => {
-              setSection(s.id);
-              document.getElementById(`section-${s.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }}
-            aria-current={section === s.id}
-            className={cx(
-              'shrink-0 rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors duration-fast',
-              section === s.id ? 'bg-blue-wash text-blue' : 'text-soft hover:bg-sunk hover:text-ink',
-            )}
-          >
-            {s.label}
-          </button>
-        ))}
-      </nav>
-
-      <div className="flex flex-col gap-5">
-        <section id="section-identity" className="scroll-mt-24">
-          <Block title="Identity">
+      <div className="grid gap-10 lg:grid-cols-[1fr_280px] lg:gap-12">
+        <div className="flex min-w-0 flex-col gap-8">
+          <Panel title="What it is">
             <div className="flex flex-col gap-4">
-              <TextField
-                label="Title"
-                required
-                value={form.title}
-                onChange={(e) => update({ title: e.target.value })}
-                error={error?.fieldError('title')}
-              />
-              <TextField
-                label="URL slug"
-                value={form.slug}
-                onChange={(e) => update({ slug: e.target.value })}
-                hint={form.slug ? `/resources/${form.slug}` : 'Generated from the title if left blank.'}
-              />
-              <TextField
+              <Field label="Title" error={failure?.on('title')}>
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={draft.title}
+                    onChange={(event) => edit({ title: event.target.value })}
+                  />
+                )}
+              </Field>
+
+              <Field
                 label="One-line summary"
-                required
-                value={form.shortDescription}
-                onChange={(e) => update({ shortDescription: e.target.value })}
-                hint="Shown on cards and in search results. Say what it does."
-                error={error?.fieldError('shortDescription')}
-              />
-              <div className="grid gap-4 sm:grid-cols-2">
-                <SelectField
-                  label="Category"
-                  value={form.categoryId}
-                  onChange={(e) => update({ categoryId: e.target.value, subcategoryId: null })}
-                  error={error?.fieldError('categoryId')}
-                >
-                  {categories?.items.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </SelectField>
-                {subcategories.length > 0 ? (
-                  <SelectField
-                    label="Subcategory"
-                    value={form.subcategoryId ?? ''}
-                    onChange={(e) => update({ subcategoryId: e.target.value || null })}
+                hint="Shown on cards and in search results. Say what it does, not what it is called."
+                error={failure?.on('shortDescription')}
+              >
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={draft.shortDescription}
+                    onChange={(event) => edit({ shortDescription: event.target.value })}
+                  />
+                )}
+              </Field>
+
+              <Field label="Full description" error={failure?.on('fullDescription')}>
+                {(props) => (
+                  <Textarea
+                    {...props}
+                    rows={7}
+                    value={draft.fullDescription}
+                    onChange={(event) => edit({ fullDescription: event.target.value })}
+                  />
+                )}
+              </Field>
+
+              <Field
+                label="How to install it"
+                hint="Written steps. Line breaks are kept exactly as typed."
+                error={failure?.on('installationGuide')}
+              >
+                {(props) => (
+                  <Textarea
+                    {...props}
+                    rows={6}
+                    value={draft.installationGuide}
+                    onChange={(event) => edit({ installationGuide: event.target.value })}
+                  />
+                )}
+              </Field>
+
+              <Field label="Requirements" optional error={failure?.on('requirements')}>
+                {(props) => (
+                  <Textarea
+                    {...props}
+                    rows={3}
+                    value={draft.requirements}
+                    onChange={(event) => edit({ requirements: event.target.value })}
+                  />
+                )}
+              </Field>
+            </div>
+          </Panel>
+
+          <Panel title="The file">
+            {loaded ? (
+              <>
+                {!hasFile ? (
+                  <div className="mb-4">
+                    <Note tone="caution">Add a downloadable file before publishing.</Note>
+                  </div>
+                ) : null}
+
+                <div className="mb-4">
+                  <Button icon="upload" onClick={() => setVersionOpen(true)}>
+                    Upload the file
+                  </Button>
+                </div>
+
+                {loaded.allVersions.length ? (
+                  <ul className="flex flex-col">
+                    {loaded.allVersions.map((version) => (
+                      <li
+                        key={version.id}
+                        className={cx(
+                          'flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line py-3 first:border-t',
+                          version.retired && 'opacity-50',
+                        )}
+                      >
+                        <span className="font-mono text-[13.5px] font-semibold">
+                          v{version.version}
+                        </span>
+                        {version.isCurrent ? <Marker tone="accent">Current</Marker> : null}
+                        {version.retired ? <Marker tone="neutral">Retired</Marker> : null}
+                        <span className="font-mono text-[11.5px] text-text-4">
+                          {version.fileSizeLabel} / {version.originalName}
+                        </span>
+                        <span className="ml-auto font-mono text-[11.5px] text-text-4">
+                          {formatDate(version.publishedAt)}
+                        </span>
+                        {!version.isCurrent && !version.retired ? (
+                          <Button
+                            size="sm"
+                            variant="quiet"
+                            onClick={async () => {
+                              await api.patch(
+                                `/admin/resources/${id}/versions/${version.id}`,
+                                { makeCurrent: true },
+                              );
+                              setMessage(`v${version.version} is now the current version.`);
+                              resource.reload();
+                            }}
+                          >
+                            Make current
+                          </Button>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[13px] text-text-3">
+                    No file yet. Every version keeps its own notes, size and checksum.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-[13px] text-text-3">
+                Save this resource first, then upload the file it hands out.
+              </p>
+            )}
+          </Panel>
+
+          <Panel title="Preview">
+            {loaded ? (
+              <div className="flex flex-col gap-5">
+                <Field label="Preview type">
+                  {(props) => (
+                    <Select
+                      {...props}
+                      value={draft.previewType}
+                      onChange={(event) =>
+                        edit({ previewType: event.target.value as PreviewType })
+                      }
+                    >
+                      {PREVIEW_TYPES.map((type) => (
+                        <option key={type} value={type}>
+                          {statusLabel(type)}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
+
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <MediaSlot
+                    resourceId={loaded.id}
+                    slot="thumbnail"
+                    label="Card thumbnail"
+                    current={loaded.thumbnailUrl}
+                    onDone={() => {
+                      setMessage('Thumbnail updated.');
+                      resource.reload();
+                    }}
+                  />
+                  <MediaSlot
+                    resourceId={loaded.id}
+                    slot="preview"
+                    label="Preview image or video"
+                    current={loaded.previewUrl}
+                    onDone={() => {
+                      setMessage('Preview updated.');
+                      resource.reload();
+                    }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <p className="text-[13px] text-text-3">Save it first, then add the preview.</p>
+            )}
+          </Panel>
+
+          <Panel title="Search and sharing">
+            <div className="flex flex-col gap-4">
+              <Field label="URL slug" hint="Changing this changes the public address." optional>
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={draft.slug}
+                    onChange={(event) => edit({ slug: event.target.value })}
+                    placeholder="auto-beat-marker"
+                  />
+                )}
+              </Field>
+
+              <Field label="SEO title" optional hint="Up to 70 characters.">
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={draft.seoTitle}
+                    onChange={(event) => edit({ seoTitle: event.target.value })}
+                  />
+                )}
+              </Field>
+
+              <Field label="SEO description" optional hint="Up to 200 characters.">
+                {(props) => (
+                  <Textarea
+                    {...props}
+                    rows={2}
+                    value={draft.seoDescription}
+                    onChange={(event) => edit({ seoDescription: event.target.value })}
+                  />
+                )}
+              </Field>
+            </div>
+          </Panel>
+        </div>
+
+        <aside className="flex flex-col gap-8">
+          <Panel title="Publishing">
+            {loaded ? (
+              <div className="flex flex-col gap-2.5">
+                {loaded.status !== 'PUBLISHED' ? (
+                  <Button variant="primary" disabled={!hasFile} onClick={() => setStatus('PUBLISHED', true)}>
+                    Publish now
+                  </Button>
+                ) : (
+                  <Button onClick={() => setStatus('DRAFT')}>Unpublish</Button>
+                )}
+                <Button disabled={!hasFile} onClick={() => setStatus('UNLISTED')}>
+                  Unlist (link only)
+                </Button>
+                <Button onClick={() => setStatus('ARCHIVED')}>Archive</Button>
+              </div>
+            ) : (
+              <p className="text-[13px] text-text-3">Publishing opens once it is saved.</p>
+            )}
+          </Panel>
+
+          <Panel title="Filing">
+            <div className="flex flex-col gap-4">
+              <Field label="Category" error={failure?.on('categoryId')}>
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={draft.categoryId}
+                    onChange={(event) => edit({ categoryId: event.target.value, subcategoryId: '' })}
                   >
-                    <option value="">None</option>
-                    {subcategories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
+                    {(categories.data?.items ?? []).map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
                       </option>
                     ))}
-                  </SelectField>
-                ) : null}
-              </div>
-              <TextField
-                label="Format"
-                value={form.format}
-                onChange={(e) => update({ format: e.target.value })}
-                hint="Shown as a chip, e.g. ZIP, CUBE, FFX."
-              />
-            </div>
-          </Block>
-        </section>
-
-        <section id="section-description" className="scroll-mt-24">
-          <Block title="Description">
-            <div className="flex flex-col gap-4">
-              <TextArea
-                label="Full description"
-                rows={10}
-                value={form.fullDescription}
-                onChange={(e) => update({ fullDescription: e.target.value })}
-                hint="What it is, what is included, and why it is useful. Line breaks are kept."
-              />
-              <TextArea
-                label="Requirements"
-                rows={3}
-                value={form.requirements}
-                onChange={(e) => update({ requirements: e.target.value })}
-                hint="Anything needed beyond the software itself: disk space, plugins, codecs."
-              />
-            </div>
-          </Block>
-        </section>
-
-        <section id="section-media" className="scroll-mt-24">
-          <Block title="Media" description="Thumbnail and preview. These appear before anyone downloads.">
-            <div className="flex flex-col gap-5">
-              <SelectField
-                label="Preview type"
-                value={form.previewType}
-                onChange={(e) => update({ previewType: e.target.value as Form['previewType'] })}
-                hint="Choose what suits the asset. A LUT wants before and after, a script wants screenshots."
-              >
-                <option value="NONE">No preview</option>
-                <option value="IMAGE">Single image</option>
-                <option value="VIDEO">Video</option>
-                <option value="BEFORE_AFTER">Before / after slider</option>
-                <option value="AUDIO">Audio</option>
-                <option value="GALLERY">Image gallery</option>
-              </SelectField>
-
-              {resourceId ? (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <MediaSlot
-                    resourceId={resourceId}
-                    slot="thumbnail"
-                    label="Thumbnail"
-                    accept="image/png,image/jpeg,image/webp"
-                    purpose="thumbnail"
-                    currentUrl={resource?.thumbnailUrl ?? null}
-                    onDone={reloadResource}
-                  />
-                  {form.previewType === 'BEFORE_AFTER' ? (
-                    <>
-                      <MediaSlot
-                        resourceId={resourceId}
-                        slot="previewBefore"
-                        label="Before image"
-                        accept="image/png,image/jpeg,image/webp"
-                        purpose="preview"
-                        currentUrl={resource?.previewBeforeUrl ?? null}
-                        onDone={reloadResource}
-                      />
-                      <MediaSlot
-                        resourceId={resourceId}
-                        slot="previewAfter"
-                        label="After image"
-                        accept="image/png,image/jpeg,image/webp"
-                        purpose="preview"
-                        currentUrl={resource?.previewAfterUrl ?? null}
-                        onDone={reloadResource}
-                      />
-                    </>
-                  ) : form.previewType !== 'NONE' ? (
-                    <MediaSlot
-                      resourceId={resourceId}
-                      slot="preview"
-                      label="Preview file"
-                      accept={
-                        form.previewType === 'VIDEO'
-                          ? 'video/mp4,video/webm'
-                          : form.previewType === 'AUDIO'
-                            ? 'audio/mpeg,audio/wav'
-                            : 'image/png,image/jpeg,image/webp'
-                      }
-                      purpose="preview"
-                      currentUrl={resource?.previewUrl ?? null}
-                      onDone={reloadResource}
-                    />
-                  ) : null}
-                </div>
-              ) : (
-                <p className="border-l-2 border-rule-strong py-1 pl-4 text-[13px] text-soft">
-                  Save the resource first. Media attaches to it once it exists.
-                </p>
-              )}
-            </div>
-          </Block>
-        </section>
-
-        <section id="section-compatibility" className="scroll-mt-24">
-          <Block title="Compatibility" description="Only list software you have actually tested.">
-            <div className="flex flex-col gap-2.5">
-              {softwareList?.items.map((s) => {
-                const entry = form.software.find((x) => x.softwareId === s.id);
-                return (
-                  <div key={s.id} className="flex flex-wrap items-center gap-3">
-                    <label className="flex min-w-[150px] flex-1 cursor-pointer items-center gap-2.5">
-                      <input
-                        type="checkbox"
-                        checked={!!entry}
-                        onChange={(e) =>
-                          update({
-                            software: e.target.checked
-                              ? [...form.software, { softwareId: s.id, minVersion: null, note: null }]
-                              : form.software.filter((x) => x.softwareId !== s.id),
-                          })
-                        }
-                        className="h-4 w-4 cursor-pointer accent-[var(--blue)]"
-                      />
-                      <span className="text-[14px]">{s.name}</span>
-                    </label>
-                    {entry ? (
-                      <>
-                        <input
-                          type="text"
-                          value={entry.minVersion ?? ''}
-                          onChange={(e) =>
-                            update({
-                              software: form.software.map((x) =>
-                                x.softwareId === s.id ? { ...x, minVersion: e.target.value || null } : x,
-                              ),
-                            })
-                          }
-                          placeholder="Min version"
-                          aria-label={`Minimum version for ${s.name}`}
-                          className="h-9 w-28 rounded-none border-0 border-b border-rule-strong bg-transparent px-0 text-[13px] text-ink transition-colors duration-fast hover:border-ink focus:border-blue focus:outline-none focus:ring-0"
-                        />
-                        <input
-                          type="text"
-                          value={entry.note ?? ''}
-                          onChange={(e) =>
-                            update({
-                              software: form.software.map((x) =>
-                                x.softwareId === s.id ? { ...x, note: e.target.value || null } : x,
-                              ),
-                            })
-                          }
-                          placeholder="Note (optional)"
-                          aria-label={`Note for ${s.name}`}
-                          className="h-9 min-w-0 flex-1 rounded-none border-0 border-b border-rule-strong bg-transparent px-0 text-[13px] text-ink transition-colors duration-fast hover:border-ink focus:border-blue focus:outline-none focus:ring-0"
-                        />
-                      </>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          </Block>
-        </section>
-
-        <section id="section-files" className="scroll-mt-24">
-          <VersionsPanel
-            resourceId={resourceId}
-            versions={resource?.allVersions ?? []}
-            onChanged={reloadResource}
-          />
-        </section>
-
-        <section id="section-installation" className="scroll-mt-24">
-          <Block title="Installation" description="Exact steps. This is the difference between a useful resource and a frustrating one.">
-            <TextArea
-              label="Installation guide"
-              rows={10}
-              value={form.installationGuide}
-              onChange={(e) => update({ installationGuide: e.target.value })}
-              hint="Shown in a monospace block, so numbered steps and paths stay readable."
-            />
-          </Block>
-        </section>
-
-        <section id="section-license" className="scroll-mt-24">
-          <Block title="License">
-            <SelectField
-              label="License"
-              value={form.licenseId ?? ''}
-              onChange={(e) => update({ licenseId: e.target.value || null })}
-              hint="Every downloadable resource should state what people may do with it."
-            >
-              <option value="">No license selected</option>
-              {licenses?.items.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </SelectField>
-          </Block>
-        </section>
-
-        <section id="section-seo" className="scroll-mt-24">
-          <Block title="Discovery" description="Tags, search metadata and quality flags.">
-            <div className="flex flex-col gap-4">
-              <TagInput
-                value={form.tags}
-                onChange={(tags) => update({ tags })}
-              />
-              <TextField
-                label="SEO title"
-                value={form.seoTitle}
-                onChange={(e) => update({ seoTitle: e.target.value })}
-                hint="Leave blank to generate one from the title and category."
-              />
-              <TextArea
-                label="SEO description"
-                rows={2}
-                value={form.seoDescription}
-                onChange={(e) => update({ seoDescription: e.target.value })}
-                hint="Leave blank to generate one from the summary and compatibility."
-              />
-              <div>
-                <p className="mb-2 text-[13px] font-semibold">Quality flags</p>
-                <p className="mb-2.5 text-[12.5px] text-faint">Use sparingly. They mean less the more you use them.</p>
-                <div className="flex flex-wrap gap-2">
-                  {['CREATOR_PICK', 'BEGINNER_FRIENDLY', 'ADVANCED', 'EXPERIMENTAL'].map((flag) => (
-                    <button
-                      key={flag}
-                      onClick={() =>
-                        update({
-                          qualityFlags: form.qualityFlags.includes(flag)
-                            ? form.qualityFlags.filter((f) => f !== flag)
-                            : [...form.qualityFlags, flag],
-                        })
-                      }
-                      aria-pressed={form.qualityFlags.includes(flag)}
-                      className={cx(
-                        'text-[13px] underline-offset-4 transition-colors duration-fast',
-                        form.qualityFlags.includes(flag)
-                          ? 'text-blue underline decoration-blue'
-                          : 'text-faint hover:text-ink hover:underline',
-                      )}
-                    >
-                      {flag.split('_').map((w) => w[0] + w.slice(1).toLowerCase()).join(' ')}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </Block>
-        </section>
-
-        <section id="section-publishing" className="scroll-mt-24">
-          <PublishPanel
-            resourceId={resourceId}
-            resource={resource ?? null}
-            featured={form.featured}
-            onFeaturedChange={(featured) => update({ featured })}
-            onChanged={reloadResource}
-          />
-        </section>
-      </div>
-    </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const tone =
-    status === 'PUBLISHED'
-      ? 'go'
-      : status === 'SCHEDULED'
-        ? 'warn'
-        : status === 'UNLISTED'
-          ? 'blue'
-          : status === 'ARCHIVED'
-            ? 'stop'
-            : 'neutral';
-  return <Marker tone={tone}>{status.charAt(0) + status.slice(1).toLowerCase()}</Marker>;
-}
-
-function SaveIndicator({ state }: { state: SaveState }) {
-  if (state === 'idle') return null;
-  const map = {
-    saving: { text: 'Saving…', className: 'text-faint' },
-    saved: { text: 'Saved', className: 'text-go' },
-    error: { text: 'Not saved', className: 'text-stop' },
-  } as const;
-  const entry = map[state];
-  return (
-    <span className={cx('flex items-center gap-1 text-[12.5px]', entry.className)} role="status">
-      {state === 'saving' ? <Icon name="spinner" size={11} /> : null}
-      {entry.text}
-    </span>
-  );
-}
-
-function MediaSlot({
-  resourceId,
-  slot,
-  label,
-  accept,
-  purpose,
-  currentUrl,
-  onDone,
-}: {
-  resourceId: string;
-  slot: string;
-  label: string;
-  accept: string;
-  purpose: 'thumbnail' | 'preview';
-  currentUrl: string | null;
-  onDone: () => void;
-}) {
-  const { toast } = useToast();
-
-  const attach = async (upload: CompletedUpload) => {
-    try {
-      await api.post(`/admin/resources/${resourceId}/media`, {
-        uploadSessionId: upload.uploadSessionId,
-        slot,
-      });
-      toast(`${label} updated.`, 'success');
-      onDone();
-    } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'Could not attach that.', 'error');
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-2">
-      <p className="text-[13px] font-semibold">{label}</p>
-      {currentUrl ? (
-        <div className="well aspect-video">
-          <img src={currentUrl} alt={`Current ${label}`} loading="lazy" />
-        </div>
-      ) : null}
-      <Uploader purpose={purpose} label={currentUrl ? `Replace ${label.toLowerCase()}` : label} accept={accept} onComplete={attach} compact={!!currentUrl} />
-    </div>
-  );
-}
-
-function VersionsPanel({
-  resourceId,
-  versions,
-  onChanged,
-}: {
-  resourceId: string | null;
-  versions: Array<{
-    id: string;
-    version: string;
-    releaseNotes: string;
-    fileSizeLabel: string;
-    originalName: string;
-    checksum: string | null;
-    retired: boolean;
-    isCurrent: boolean;
-    publishedAt: string;
-  }>;
-  onChanged: () => void;
-}) {
-  const { toast } = useToast();
-  const [open, setOpen] = useState(false);
-  const [upload, setUpload] = useState<CompletedUpload | null>(null);
-  const [version, setVersion] = useState('');
-  const [notes, setNotes] = useState('');
-  const [compatibility, setCompatibility] = useState('');
-  const [notify, setNotify] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  const submit = async () => {
-    if (!resourceId || !upload) return;
-    setBusy(true);
-    try {
-      await api.post(`/admin/resources/${resourceId}/versions`, {
-        uploadSessionId: upload.uploadSessionId,
-        version,
-        releaseNotes: notes,
-        compatibility,
-        makeCurrent: true,
-        notifyDownloaders: notify,
-      });
-      toast(`Version ${version} added.`, 'success');
-      setOpen(false);
-      setUpload(null);
-      setVersion('');
-      setNotes('');
-      setCompatibility('');
-      setNotify(false);
-      onChanged();
-    } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'Could not add that version.', 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const makeCurrent = async (versionId: string) => {
-    if (!resourceId) return;
-    await api
-      .patch(`/admin/resources/${resourceId}/versions/${versionId}`, { makeCurrent: true })
-      .catch((err) => toast(err instanceof ApiError ? err.message : 'That did not work.', 'error'));
-    onChanged();
-  };
-
-  return (
-    <>
-      <Block
-        title="Files and versions"
-        description="The current version is what people download."
-        action={
-          resourceId ? (
-            <Button size="sm" variant="primary" icon="plus" onClick={() => setOpen(true)}>
-              Add version
-            </Button>
-          ) : null
-        }
-      >
-        {!resourceId ? (
-          <p className="border-l-2 border-rule-strong py-1 pl-4 text-[13px] text-soft">
-            Save the resource first, then attach its file.
-          </p>
-        ) : versions.length === 0 ? (
-          <div className="border-l-2 border-rule-strong py-3 pl-5">
-            <p className="text-[13.5px] text-soft">No file yet.</p>
-            <p className="mt-1 text-[12.5px] text-faint">
-              A resource cannot be published until it has one.
-            </p>
-            <Button className="mt-3" variant="primary" size="sm" icon="upload" onClick={() => setOpen(true)}>
-              Upload the file
-            </Button>
-          </div>
-        ) : (
-          <ul className="flex flex-col gap-2.5">
-            {versions.map((v) => (
-              <li
-                key={v.id}
-                className={cx(
-                  'rounded-md border p-3.5',
-                  v.isCurrent ? 'border-blue bg-blue-wash/30' : 'border-rule',
-                  v.retired && 'opacity-60',
+                  </Select>
                 )}
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-[13.5px] font-semibold">v{v.version}</span>
-                  {v.isCurrent ? <Marker tone="blue">Current</Marker> : null}
-                  {v.retired ? <Marker tone="neutral">Retired</Marker> : null}
-                  <span className="ml-auto text-[12px] text-faint">{formatDate(v.publishedAt)}</span>
-                </div>
-                <p className="mt-1.5 truncate font-mono text-[12px] text-faint">
-                  {v.originalName} · {v.fileSizeLabel}
-                </p>
-                {v.releaseNotes ? (
-                  <p className="mt-1.5 text-[13px] text-soft">{v.releaseNotes}</p>
-                ) : null}
-                {!v.isCurrent && !v.retired ? (
-                  <Button size="sm" className="mt-2.5" onClick={() => makeCurrent(v.id)}>
-                    Make current
-                  </Button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Block>
+              </Field>
 
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        title="Add a version"
-        footer={
-          <>
-            <Button onClick={() => setOpen(false)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={submit} loading={busy} disabled={!upload || !version.trim()}>
-              Add version
-            </Button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-4">
-          <Uploader
-            purpose="resource-file"
-            label="Upload the resource file"
-            onComplete={(u) => setUpload(u)}
-          />
-          {upload ? (
-            <p className="text-[12.5px] text-go">
-              {upload.originalName} · {formatBytes(upload.size)} ready
-            </p>
-          ) : null}
-          <TextField
-            label="Version"
-            required
-            value={version}
-            onChange={(e) => setVersion(e.target.value)}
-            placeholder="1.0"
-          />
-          <TextArea
-            label="Release notes"
-            rows={3}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="What changed in this version?"
-          />
-          <TextField
-            label="Compatibility"
-            value={compatibility}
-            onChange={(e) => setCompatibility(e.target.value)}
-            placeholder="After Effects 2022–2026"
-          />
-          <Toggle
-            label="Tell people who downloaded this"
-            description="Only reaches previous downloaders who opted in."
-            checked={notify}
-            onChange={setNotify}
-          />
-        </div>
-      </Dialog>
-    </>
-  );
-}
+              {subcategories.length ? (
+                <Field label="Subcategory" optional>
+                  {(props) => (
+                    <Select
+                      {...props}
+                      value={draft.subcategoryId}
+                      onChange={(event) => edit({ subcategoryId: event.target.value })}
+                    >
+                      <option value="">None</option>
+                      {subcategories.map((child) => (
+                        <option key={child.id} value={child.id}>
+                          {child.name}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
+              ) : null}
 
-function PublishPanel({
-  resourceId,
-  resource,
-  featured,
-  onFeaturedChange,
-  onChanged,
-}: {
-  resourceId: string | null;
-  resource: (ResourceDetail & { scheduledFor: string | null }) | null;
-  featured: boolean;
-  onFeaturedChange: (v: boolean) => void;
-  onChanged: () => void;
-}) {
-  const { toast } = useToast();
-  const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
-  const [notify, setNotify] = useState(true);
-  const [scheduleAt, setScheduleAt] = useState('');
-  const [deleteOpen, setDeleteOpen] = useState(false);
+              <Field label="License" optional>
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={draft.licenseId}
+                    onChange={(event) => edit({ licenseId: event.target.value })}
+                  >
+                    <option value="">Not set</option>
+                    {(licenses.data?.items ?? []).map((license) => (
+                      <option key={license.id} value={license.id}>
+                        {license.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
 
-  const setStatus = async (status: string, extra: Record<string, unknown> = {}) => {
-    if (!resourceId) return;
-    setBusy(true);
-    try {
-      await api.post(`/admin/resources/${resourceId}/status`, { status, ...extra });
-      toast(`Resource ${status.toLowerCase()}.`, 'success');
-      onChanged();
-    } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'That did not work.', 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
+              <Field label="Format" optional hint="ZIP, CUBE, MOGRT…">
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={draft.format}
+                    onChange={(event) => edit({ format: event.target.value })}
+                  />
+                )}
+              </Field>
 
-  const remove = async () => {
-    if (!resourceId) return;
-    setBusy(true);
-    try {
-      await api.del(`/admin/resources/${resourceId}`);
-      toast('Resource deleted.', 'success');
-      navigate('/admin/resources');
-    } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'Could not delete that.', 'error');
-      setBusy(false);
-    }
-  };
-
-  const hasFile = !!resource?.versions.length;
-
-  return (
-    <>
-      <Block title="Publishing">
-        <div className="flex flex-col gap-5">
-          <Toggle
-            label="Feature on the homepage"
-            description="One featured resource appears in the featured slot."
-            checked={featured}
-            onChange={onFeaturedChange}
-          />
-
-          {!hasFile && resourceId ? (
-            <p className="flex items-start gap-2 rounded-md bg-warn-wash p-3 text-[13px] text-soft">
-              <Icon name="alert" size={14} className="mt-0.5 shrink-0 text-warn" />
-              Add a downloadable file before publishing.
-            </p>
-          ) : null}
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="primary"
-              icon="check"
-              disabled={!resourceId || !hasFile || busy}
-              onClick={() => setStatus('PUBLISHED', { notify })}
-            >
-              Publish now
-            </Button>
-            <Button
-              disabled={!resourceId || !hasFile || busy}
-              onClick={() => setStatus('UNLISTED')}
-            >
-              Unlist
-            </Button>
-            <Button disabled={!resourceId || busy} onClick={() => setStatus('DRAFT')}>
-              Back to draft
-            </Button>
-            <Button
-              variant="quiet"
-              disabled={!resourceId || busy}
-              onClick={() => setStatus('ARCHIVED')}
-            >
-              Archive
-            </Button>
-          </div>
-
-          <Toggle
-            label="Notify subscribers when publishing"
-            description="Only reaches people who opted into new-resource notifications."
-            checked={notify}
-            onChange={setNotify}
-          />
-
-          <div className="border-t border-rule pt-5">
-            <p className="mb-2 text-[13px] font-semibold">Schedule instead</p>
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="flex-1">
-                <label htmlFor="schedule-at" className="sr-only">
-                  Publish at
-                </label>
-                <input
-                  id="schedule-at"
-                  type="datetime-local"
-                  value={scheduleAt}
-                  onChange={(e) => setScheduleAt(e.target.value)}
-                  className="w-full min-w-0 border-0 border-b border-rule-strong bg-transparent px-0 py-1.5 text-[14px] text-ink rounded-none transition-colors duration-fast hover:border-ink focus:border-blue focus:outline-none focus:ring-0"
-                />
-              </div>
-              <Button
-                disabled={!resourceId || !hasFile || !scheduleAt || busy}
-                onClick={() =>
-                  setStatus('SCHEDULED', {
-                    scheduledFor: new Date(scheduleAt).toISOString(),
-                    notify,
-                  })
-                }
-              >
-                Schedule
-              </Button>
+              <Field label="Tags" optional hint="Comma separated.">
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={draft.tags}
+                    onChange={(event) => edit({ tags: event.target.value })}
+                  />
+                )}
+              </Field>
             </div>
-            {resource?.scheduledFor ? (
-              <p className="mt-2 text-[12.5px] text-warn">
-                Scheduled for {formatDate(resource.scheduledFor)}
-              </p>
-            ) : null}
-          </div>
+          </Panel>
 
-          {resourceId ? (
-            <div className="border-t border-rule pt-5">
-              <Button variant="danger" icon="trash" onClick={() => setDeleteOpen(true)} disabled={busy}>
+          <Panel title="Works with">
+            <div className="flex flex-col gap-2">
+              {(software.data?.items ?? []).map((item) => (
+                <Check
+                  key={item.id}
+                  checked={draft.softwareIds.includes(item.id)}
+                  onChange={(checked) =>
+                    edit({
+                      softwareIds: checked
+                        ? [...draft.softwareIds, item.id]
+                        : draft.softwareIds.filter((value) => value !== item.id),
+                    })
+                  }
+                  label={item.name}
+                />
+              ))}
+            </div>
+          </Panel>
+
+          <Panel title="Promotion">
+            <div className="flex flex-col gap-2">
+              <Check
+                checked={draft.featured}
+                onChange={(checked) => edit({ featured: checked })}
+                label="Feature on the front page"
+              />
+              {FLAGS.map((flag) => (
+                <Check
+                  key={flag}
+                  checked={draft.qualityFlags.includes(flag)}
+                  onChange={(checked) =>
+                    edit({
+                      qualityFlags: checked
+                        ? [...draft.qualityFlags, flag]
+                        : draft.qualityFlags.filter((value) => value !== flag),
+                    })
+                  }
+                  label={statusLabel(flag)}
+                />
+              ))}
+            </div>
+          </Panel>
+
+          {loaded ? (
+            <Panel title="Danger">
+              <p className="mb-3 text-[12.5px] leading-relaxed text-text-3">
+                Deleting removes the resource, its versions and its files. Archiving keeps them and
+                takes it off the site.
+              </p>
+              <Button variant="danger" onClick={() => setDeleteOpen(true)}>
                 Delete permanently
               </Button>
-            </div>
+            </Panel>
           ) : null}
-        </div>
-      </Block>
+        </aside>
+      </div>
 
-      <ConfirmDialog
+      {loaded ? (
+        <VersionDialog
+          open={versionOpen}
+          resourceId={loaded.id}
+          firstVersion={loaded.allVersions.length === 0}
+          onClose={() => setVersionOpen(false)}
+          onAdded={(version) => {
+            setVersionOpen(false);
+            setMessage(`Version ${version} added.`);
+            resource.reload();
+          }}
+        />
+      ) : null}
+
+      <Confirm
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}
         onConfirm={remove}
         title="Delete this resource?"
-        description="The resource, every version and all its stored files are removed. Download history keeps the record, but the files are gone. This cannot be undone."
+        body="The resource, every version of it and the stored files all go. This cannot be undone."
         confirmLabel="Delete permanently"
-        destructive
-        loading={busy}
       />
     </>
   );
 }
 
-function TagInput({ value, onChange }: { value: string[]; onChange: (tags: string[]) => void }) {
-  const [draft, setDraft] = useState('');
+function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h2 className="kicker mb-4 border-b border-line pb-2">{title}</h2>
+      {children}
+    </section>
+  );
+}
 
-  const add = () => {
-    const tag = draft.trim();
-    if (!tag || value.includes(tag)) {
-      setDraft('');
-      return;
+/** One media slot: upload, and it replaces what is there. */
+function MediaSlot({
+  resourceId,
+  slot,
+  label,
+  current,
+  onDone,
+}: {
+  resourceId: string;
+  slot: 'thumbnail' | 'preview';
+  label: string;
+  current: string | null;
+  onDone: () => void;
+}) {
+  const [failure, setFailure] = useState<string | null>(null);
+
+  async function attach(upload: CompletedUpload) {
+    setFailure(null);
+    try {
+      await api.post(`/admin/resources/${resourceId}/media`, {
+        uploadSessionId: upload.uploadSessionId,
+        slot,
+      });
+      onDone();
+    } catch (err) {
+      setFailure(err instanceof ApiError ? err.message : 'That could not be attached.');
     }
-    onChange([...value, tag]);
-    setDraft('');
-  };
+  }
 
   return (
-    <div className="flex flex-col gap-2">
-      <label htmlFor="tag-input" className="text-[13px] font-semibold">
-        Tags
-      </label>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-        {value.map((tag) => (
-          <span
-            key={tag}
-            className="inline-flex items-center gap-1.5 text-[13px] text-soft"
-          >
-            {tag}
-            <button
-              onClick={() => onChange(value.filter((t) => t !== tag))}
-              aria-label={`Remove ${tag}`}
-              className="text-faint hover:text-stop"
-            >
-              <Icon name="close" size={11} />
-            </button>
-          </span>
-        ))}
-      </div>
-      <div className="flex gap-2">
-        <input
-          id="tag-input"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ',') {
-              e.preventDefault();
-              add();
-            }
-          }}
-          placeholder="Add a tag and press Enter"
-          className="w-full min-w-0 border-0 border-b border-rule-strong bg-transparent px-0 py-1.5 text-[14px] text-ink rounded-none transition-colors duration-fast hover:border-ink focus:border-blue focus:outline-none focus:ring-0 placeholder:text-ghost"
-        />
-        <Button onClick={add} disabled={!draft.trim()}>
-          Add
-        </Button>
-      </div>
+    <div>
+      <p className="mb-2 text-[13px] font-semibold">{label}</p>
+      {current ? (
+        <div className="frame mb-2 aspect-[16/10] rounded border border-line">
+          <img src={current} alt={`Current ${label.toLowerCase()}`} width={320} height={200} />
+        </div>
+      ) : null}
+      <FileDrop
+        purpose={slot === 'thumbnail' ? 'thumbnail' : 'preview'}
+        accept="image/*,video/*"
+        label={current ? 'Replace it' : 'Add one'}
+        onDone={attach}
+      />
+      {failure ? (
+        <div className="mt-2">
+          <Note tone="critical">{failure}</Note>
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * Adding a version.
+ *
+ * The file goes up first and is verified before this form will submit, so a
+ * version row can never point at bytes that did not arrive intact.
+ */
+function VersionDialog({
+  open,
+  resourceId,
+  firstVersion,
+  onClose,
+  onAdded,
+}: {
+  open: boolean;
+  resourceId: string;
+  firstVersion: boolean;
+  onClose: () => void;
+  onAdded: (version: string) => void;
+}) {
+  const [upload, setUpload] = useState<CompletedUpload | null>(null);
+  const [version, setVersion] = useState('1.0');
+  const [releaseNotes, setReleaseNotes] = useState('');
+  const [compatibility, setCompatibility] = useState('');
+  const [notify, setNotify] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<ApiError | null>(null);
+
+  async function add() {
+    if (!upload) return;
+    setBusy(true);
+    setFailure(null);
+
+    try {
+      await api.post(`/admin/resources/${resourceId}/versions`, {
+        uploadSessionId: upload.uploadSessionId,
+        version,
+        releaseNotes,
+        compatibility,
+        makeCurrent: true,
+        notifyDownloaders: notify,
+      });
+      onAdded(version);
+      setUpload(null);
+      setReleaseNotes('');
+    } catch (err) {
+      if (err instanceof ApiError) setFailure(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={firstVersion ? 'Add the file' : 'Add a new version'}
+      description="The file uploads straight to storage and is checked before it is attached."
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={!upload} loading={busy} onClick={add}>
+            Add version
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-5">
+        <FileDrop
+          purpose="resource-file"
+          label="Drop the file here, or choose one"
+          hint="ZIP, FFX, MOGRT, CUBE, DRFX and the rest."
+          onDone={setUpload}
+        />
+
+        <Field label="Version" hint="However you number them: 1.0, 2026.1, v3." error={failure?.on('version')}>
+          {(props) => (
+            <Input
+              {...props}
+              value={version}
+              onChange={(event) => setVersion(event.target.value)}
+            />
+          )}
+        </Field>
+
+        <Field label="Release notes" optional error={failure?.on('releaseNotes')}>
+          {(props) => (
+            <Textarea
+              {...props}
+              rows={3}
+              value={releaseNotes}
+              onChange={(event) => setReleaseNotes(event.target.value)}
+              placeholder="What changed in this version."
+            />
+          )}
+        </Field>
+
+        <Field label="Compatibility note" optional error={failure?.on('compatibility')}>
+          {(props) => (
+            <Input
+              {...props}
+              value={compatibility}
+              onChange={(event) => setCompatibility(event.target.value)}
+              placeholder="After Effects 2022 and newer"
+            />
+          )}
+        </Field>
+
+        {!firstVersion ? (
+          <Check
+            checked={notify}
+            onChange={setNotify}
+            label="Tell everyone who downloaded the old version"
+          />
+        ) : null}
+
+        {failure && failure.issues.length === 0 ? <Note tone="critical">{failure.message}</Note> : null}
+      </div>
+    </Dialog>
   );
 }

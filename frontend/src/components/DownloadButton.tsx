@@ -1,130 +1,129 @@
 import { useCallback, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, ApiError, type DownloadGrant } from '../lib/api';
-import { useAuth } from '../lib/auth';
-import { Button, useToast, cx } from './ui';
-import { Icon } from './Icon';
+import { api, ApiError } from '../lib/api';
+import type { DownloadGrant } from '../lib/types';
+import { useSession } from '../lib/session';
+import { Icon } from '../ui/Icon';
+import { Button, cx } from '../ui/primitives';
+import { useToast } from '../ui/Toast';
 
 /**
- * Download flow (PRD §15, §16).
+ * Getting the file.
  *
- * Guests download without any account. The button moves through
- * idle → preparing → downloading → done, and only after the file has started
- * does a non-blocking suggestion appear. Nothing ever interrupts the download.
+ * A guest downloads with no account, no interstitial and no wait: one click
+ * exchanges the public token for a short-lived signed URL and hands it
+ * straight to the browser, so the file streams from storage rather than
+ * through the API. Only once the download is already moving does a suggestion
+ * to make an account appear, and it can be dismissed and never blocks.
  */
 
-type Phase = 'idle' | 'preparing' | 'started' | 'error';
-
-interface Props {
-  token: string;
-  /** Download a specific historical version instead of the current one. */
-  version?: string;
-  label?: string;
-  size?: 'md' | 'lg';
-  fullWidth?: boolean;
-  className?: string;
-  onDownloaded?: () => void;
-}
+type Phase = 'idle' | 'preparing' | 'started' | 'failed';
 
 export function DownloadButton({
   token,
   version,
   label = 'Download free',
   size = 'lg',
-  fullWidth,
+  block,
   className,
   onDownloaded,
-}: Props) {
-  const { user } = useAuth();
+}: {
+  token: string;
+  /** Ask for a specific historical version instead of the current one. */
+  version?: string;
+  label?: string;
+  size?: 'sm' | 'md' | 'lg';
+  block?: boolean;
+  className?: string;
+  onDownloaded?: () => void;
+}) {
+  const { user } = useSession();
   const { toast } = useToast();
   const [phase, setPhase] = useState<Phase>('idle');
   const [grant, setGrant] = useState<DownloadGrant | null>(null);
-  const [showNudge, setShowNudge] = useState(false);
-  const inFlight = useRef(false);
+  const [suggest, setSuggest] = useState(false);
+  const running = useRef(false);
 
   const start = useCallback(async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
+    if (running.current) return;
+    running.current = true;
     setPhase('preparing');
 
     try {
-      const query = version ? `?version=${encodeURIComponent(version)}` : '';
-      const result = await api.get<DownloadGrant>(`/download/${token}${query}`);
+      const path = `/download/${token}${version ? `?version=${encodeURIComponent(version)}` : ''}`;
+      const result = await api.get<DownloadGrant>(path);
       setGrant(result);
 
-      // Hand the signed URL to the browser. It streams straight from storage, so
-      // the API process is not in the file's path.
       const anchor = document.createElement('a');
       anchor.href = result.url;
       anchor.download = result.filename;
       anchor.rel = 'noopener';
       document.body.appendChild(anchor);
       anchor.click();
-      document.body.removeChild(anchor);
+      anchor.remove();
 
       setPhase('started');
       onDownloaded?.();
 
-      // The suggestion appears after the file is already on its way.
       if (result.suggestAccount && !user) {
-        setTimeout(() => setShowNudge(true), 1200);
+        // After the file is on its way, never before it.
+        setTimeout(() => setSuggest(true), 900);
       }
       setTimeout(() => setPhase('idle'), 4000);
     } catch (err) {
-      setPhase('error');
-      const message =
+      setPhase('failed');
+      toast(
         err instanceof ApiError
           ? err.message
-          : 'That download could not be prepared. Try again in a moment.';
-      toast(message, 'error');
+          : 'That download could not be prepared. Try again in a moment.',
+        'error',
+      );
       setTimeout(() => setPhase('idle'), 3000);
     } finally {
-      inFlight.current = false;
+      running.current = false;
     }
   }, [token, version, user, toast, onDownloaded]);
 
-  const content =
-    phase === 'preparing'
-      ? 'Preparing…'
-      : phase === 'started'
-        ? 'Download started'
-        : phase === 'error'
-          ? 'Try again'
-          : label;
-
   return (
-    <div className={cx('flex flex-col gap-2', fullWidth && 'w-full', className)}>
+    <div className={cx('flex flex-col gap-2.5', block && 'w-full', className)}>
       <Button
-        variant={phase === 'error' ? 'danger' : 'primary'}
+        variant={phase === 'failed' ? 'danger' : 'primary'}
         size={size}
-        fullWidth={fullWidth}
-        onClick={start}
+        block={block}
         loading={phase === 'preparing'}
-        icon={phase === 'started' ? 'check' : phase === 'error' ? 'refresh' : 'download'}
+        icon={phase === 'started' ? 'check' : phase === 'failed' ? 'refresh' : 'download'}
+        onClick={start}
       >
-        {content}
+        {phase === 'preparing'
+          ? 'Preparing…'
+          : phase === 'started'
+            ? 'Download started'
+            : phase === 'failed'
+              ? 'Try again'
+              : label}
       </Button>
 
       {phase === 'started' && grant ? (
-        <p className="text-[12.5px] text-go" role="status">
+        <p className="font-mono text-[12px] text-positive" role="status">
           {grant.filename} / {grant.sizeLabel}
           {grant.version ? ` / v${grant.version}` : ''}
         </p>
       ) : null}
 
-      {showNudge ? (
-        <div className="flex items-start gap-2.5 border-l-2 border-blue py-1 pl-4 animate-rise-in">
-          <p className="flex-1 text-[13px] leading-relaxed text-soft">
-            Want your download history and update alerts?{' '}
-            <Link to="/register" className="link font-medium">
+      {suggest ? (
+        <div className="flex items-start gap-2.5 border-l-2 border-accent py-1 pl-4 animate-rise">
+          <p className="flex-1 text-[13px] leading-relaxed text-text-2">
+            Want your download history and a note when this is updated?{' '}
+            <Link to="/register" className="underlined font-medium">
               Create a free account
             </Link>
             .
           </p>
           <button
-            onClick={() => setShowNudge(false)}
+            type="button"
+            onClick={() => setSuggest(false)}
             aria-label="Dismiss"
-            className="shrink-0 text-faint hover:text-ink"
+            className="shrink-0 text-text-4 hover:text-text"
           >
             <Icon name="close" size={14} />
           </button>
@@ -135,10 +134,10 @@ export function DownloadButton({
 }
 
 /**
- * Compact sticky download bar for mobile (PRD §84). It only appears once the
- * primary CTA has scrolled away, and sits above the safe area.
+ * The phone's download bar. It slides in only once the real call to action has
+ * scrolled off, so it is never competing with the button it stands in for.
  */
-export function StickyDownloadBar({
+export function StickyDownload({
   token,
   title,
   sizeLabel,
@@ -151,20 +150,17 @@ export function StickyDownloadBar({
 }) {
   return (
     <div
+      aria-hidden={!visible}
       className={cx(
-        'fixed inset-x-0 bottom-0 z-40 border-t border-rule bg-paper/95 backdrop-blur md:hidden',
-        'px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
-        'transition-transform duration-normal ease-out',
+        'fixed inset-x-0 bottom-0 z-40 border-t border-line bg-ground/95 px-4 py-3 backdrop-blur md:hidden',
+        'pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-transform duration-normal ease-out',
         visible ? 'translate-y-0' : 'translate-y-full',
       )}
-      aria-hidden={!visible}
     >
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13px] font-semibold">{title}</p>
-          <p className="text-[12px] text-faint">
-            Free{sizeLabel ? ` / ${sizeLabel}` : ''}
-          </p>
+          <p className="text-[12px] text-text-3">Free{sizeLabel ? ` / ${sizeLabel}` : ''}</p>
         </div>
         <DownloadButton token={token} label="Download" size="md" className="shrink-0" />
       </div>

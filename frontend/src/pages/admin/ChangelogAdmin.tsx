@@ -1,207 +1,283 @@
 import { useState } from 'react';
-import { api, ApiError, type ResourceCard } from '../../lib/api';
-import { useFetch } from '../../lib/hooks';
+import { api, ApiError } from '../../lib/api';
+import { useLoad, useTitle } from '../../lib/hooks';
+import type { ChangelogEntry, Paged, ResourceCard } from '../../lib/types';
+import { formatDate, titleCase } from '../../lib/format';
+import { PageError } from '../../components/Chrome';
+import { Confirm } from '../../ui/Dialog';
 import {
-  Marker, Button, ConfirmDialog, Dialog, EmptyState, Block, SelectField,
-  Skeleton, TextArea, TextField, useToast,
-} from '../../components/ui';
-import { formatDate } from '../../lib/format';
+  Button,
+  Check,
+  Empty,
+  Field,
+  Input,
+  Marker,
+  Note,
+  Select,
+  Skeleton,
+  Textarea,
+} from '../../ui/primitives';
 
-interface Entry {
-  id: string;
+/**
+ * Writing an update.
+ *
+ * An entry links the resources it is about, which is what turns the public
+ * updates page from a list of claims into a list of things a reader can go and
+ * download. Announcing is a separate, deliberate act: writing here notifies
+ * nobody until it is published.
+ */
+
+const KINDS = ['RELEASE', 'UPDATE', 'SITE', 'ANNOUNCEMENT'] as const;
+
+interface Draft {
   title: string;
-  slug: string;
   body: string;
-  kind: 'RELEASE' | 'UPDATE' | 'SITE' | 'ANNOUNCEMENT';
-  status: string;
-  publishedAt: string | null;
-  createdAt: string;
+  kind: (typeof KINDS)[number];
+  status: 'DRAFT' | 'PUBLISHED';
   resourceIds: string[];
-  tutorialIds: string[];
 }
 
-/** Changelog management (PRD §27). */
+const EMPTY: Draft = { title: '', body: '', kind: 'RELEASE', status: 'DRAFT', resourceIds: [] };
+
 export default function ChangelogAdmin() {
-  const { toast } = useToast();
-  const { data, loading, reload } = useFetch<{ items: Entry[] }>('/updates/admin/all');
-  const { data: resources } = useFetch<{ items: ResourceCard[] }>('/admin/resources?perPage=100&status=PUBLISHED');
-  const [editing, setEditing] = useState<Entry | null>(null);
-  const [open, setOpen] = useState(false);
-  const [deleting, setDeleting] = useState<Entry | null>(null);
+  const entries = useLoad<{ items: ChangelogEntry[] }>('/updates/admin/all');
+  const resources = useLoad<Paged<ResourceCard>>('/admin/resources?perPage=100');
 
-  const remove = async () => {
-    if (!deleting) return;
-    try {
-      await api.del(`/updates/admin/${deleting.id}`);
-      toast('Update deleted.', 'success');
-      setDeleting(null);
-      reload();
-    } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'Could not delete that.', 'error');
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-5">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[30px] leading-tight md:text-[34px]">Updates</h1>
-        <Button variant="primary" icon="plus" onClick={() => { setEditing(null); setOpen(true); }}>
-          New update
-        </Button>
-      </header>
-
-      {loading && !data ? (
-        <Skeleton className="h-64" />
-      ) : !data || data.items.length === 0 ? (
-        <EmptyState
-          icon="history"
-          title="No updates posted"
-          description="Post here when you release something or change how the site works."
-          action={<Button variant="primary" onClick={() => setOpen(true)}>Write one</Button>}
-        />
-      ) : (
-        <div className="flex flex-col gap-3">
-          {data.items.map((e) => (
-            <Block key={e.id}>
-              <div className="flex flex-wrap items-center gap-2">
-                <Marker tone={e.status === 'PUBLISHED' ? 'go' : 'neutral'}>
-                  {e.status.charAt(0) + e.status.slice(1).toLowerCase()}
-                </Marker>
-                <Marker tone="neutral">{e.kind.toLowerCase()}</Marker>
-                <h2 className="text-[15px] font-semibold">{e.title}</h2>
-                <span className="ml-auto text-[12px] text-faint">
-                  {e.publishedAt ? formatDate(e.publishedAt) : `drafted ${formatDate(e.createdAt)}`}
-                </span>
-              </div>
-              <p className="mt-2 line-clamp-3 text-[13.5px] leading-relaxed text-soft">{e.body}</p>
-              <div className="mt-3 flex gap-2">
-                <Button size="sm" icon="edit" onClick={() => { setEditing(e); setOpen(true); }}>Edit</Button>
-                <Button size="sm" variant="quiet" icon="trash" onClick={() => setDeleting(e)}>Delete</Button>
-              </div>
-            </Block>
-          ))}
-        </div>
-      )}
-
-      <EntryDialog
-        open={open}
-        entry={editing}
-        resources={resources?.items ?? []}
-        onClose={() => { setOpen(false); setEditing(null); }}
-        onSaved={reload}
-      />
-
-      <ConfirmDialog
-        open={!!deleting}
-        onClose={() => setDeleting(null)}
-        onConfirm={remove}
-        title={`Delete "${deleting?.title}"?`}
-        description="The update is removed from the public timeline. This cannot be undone."
-        confirmLabel="Delete"
-        destructive
-      />
-    </div>
-  );
-}
-
-function EntryDialog({
-  open, entry, resources, onClose, onSaved,
-}: {
-  open: boolean;
-  entry: Entry | null;
-  resources: ResourceCard[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const { toast } = useToast();
-  const [form, setForm] = useState({ title: '', body: '', kind: 'RELEASE', status: 'DRAFT', resourceIds: [] as string[] });
+  const [draft, setDraft] = useState<Draft>(EMPTY);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [failure, setFailure] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState(false);
-  const [key, setKey] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, setPending] = useState<ChangelogEntry | null>(null);
 
-  if (open && key !== (entry?.id ?? 'new')) {
-    setKey(entry?.id ?? 'new');
-    setForm({
-      title: entry?.title ?? '',
-      body: entry?.body ?? '',
-      kind: entry?.kind ?? 'RELEASE',
-      status: entry?.status === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT',
-      resourceIds: entry?.resourceIds ?? [],
-    });
+  useTitle('Updates · Owner tools');
+
+  function reset() {
+    setDraft(EMPTY);
+    setEditing(null);
+    setFailure(null);
   }
 
-  const save = async () => {
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
     setBusy(true);
+    setFailure(null);
+
     try {
-      if (entry) await api.patch(`/updates/admin/${entry.id}`, form);
-      else await api.post('/updates/admin', form);
-      toast('Update saved.', 'success');
-      onSaved();
-      onClose();
+      if (editing) {
+        await api.patch(`/updates/admin/${editing}`, { ...draft, tutorialIds: [] });
+        setMessage('Update saved.');
+      } else {
+        await api.post('/updates/admin', { ...draft, tutorialIds: [] });
+        setMessage('Update written.');
+      }
+      reset();
+      entries.reload();
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'Could not save that.', 'error');
+      if (err instanceof ApiError) setFailure(err);
     } finally {
       setBusy(false);
     }
-  };
+  }
+
+  async function remove() {
+    if (!pending) return;
+    try {
+      await api.delete(`/updates/admin/${pending.id}`);
+      setMessage('Update deleted.');
+      setPending(null);
+      entries.reload();
+    } catch (err) {
+      if (err instanceof ApiError) setFailure(err);
+      setPending(null);
+    }
+  }
+
+  if (entries.error) return <PageError onRetry={entries.reload} />;
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      title={entry ? 'Edit update' : 'New update'}
-      footer={
-        <>
-          <Button onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button variant="primary" onClick={save} loading={busy} disabled={!form.title.trim() || !form.body.trim()}>
-            Save
-          </Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        <TextField label="Title" required value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} data-autofocus />
-        <TextArea label="What changed" required rows={5} value={form.body} onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))} />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField label="Kind" value={form.kind} onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value }))}>
-            <option value="RELEASE">New release</option>
-            <option value="UPDATE">Resource update</option>
-            <option value="SITE">Site change</option>
-            <option value="ANNOUNCEMENT">Announcement</option>
-          </SelectField>
-          <SelectField label="Status" value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
-            <option value="DRAFT">Draft</option>
-            <option value="PUBLISHED">Published</option>
-          </SelectField>
+    <>
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-[30px]">Updates</h1>
+          <p className="mt-1.5 text-[13.5px] text-text-3">
+            The public changelog. Nothing here is announced until it is published.
+          </p>
+        </div>
+        {message ? (
+          <p role="status" className="text-[13px] text-positive">
+            {message}
+          </p>
+        ) : null}
+      </header>
+
+      {failure ? (
+        <div className="mb-6">
+          <Note tone="critical">{failure.message}</Note>
+        </div>
+      ) : null}
+
+      <div className="grid gap-12 lg:grid-cols-[1fr_320px]">
+        <div className="min-w-0">
+          {entries.loading && !entries.data ? (
+            <Skeleton className="h-64 w-full" />
+          ) : entries.data && entries.data.items.length ? (
+            <ul className="flex flex-col">
+              {entries.data.items.map((entry) => (
+                <li key={entry.id} className="border-b border-line py-4 first:border-t">
+                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                    <Marker tone={entry.status === 'PUBLISHED' ? 'positive' : 'neutral'}>
+                      {titleCase(entry.status ?? 'DRAFT')}
+                    </Marker>
+                    <span className="text-[14.5px] text-text">{entry.title}</span>
+                    <span className="font-mono text-[11.5px] text-text-4">
+                      {titleCase(entry.kind)}
+                    </span>
+                    <span className="ml-auto font-mono text-[11.5px] text-text-4">
+                      {entry.publishedAt ? formatDate(entry.publishedAt) : 'not published'}
+                    </span>
+                  </div>
+
+                  <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-text-2">
+                    {entry.body}
+                  </p>
+
+                  <div className="mt-2.5 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="quiet"
+                      onClick={() => {
+                        setEditing(entry.id);
+                        setDraft({
+                          title: entry.title,
+                          body: entry.body,
+                          kind: entry.kind,
+                          status: entry.status === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT',
+                          resourceIds: entry.resourceIds ?? [],
+                        });
+                        setMessage(null);
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button size="sm" variant="quiet" onClick={() => setPending(entry)}>
+                      Delete
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <Empty
+              icon="calendar"
+              title="No updates written"
+              body="Every release is worth a line. Write the first one."
+            />
+          )}
         </div>
 
-        <div>
-          <p className="mb-2 text-[13px] font-semibold">Link resources</p>
-          <div className="max-h-40 overflow-y-auto border-y border-rule py-2">
-            {resources.length === 0 ? (
-              <p className="p-2 text-[13px] text-faint">No published resources yet.</p>
-            ) : (
-              resources.map((r) => (
-                <label key={r.id} className="flex cursor-pointer items-center gap-2.5 rounded px-2 py-1.5 hover:bg-sunk">
-                  <input
-                    type="checkbox"
-                    checked={form.resourceIds.includes(r.id)}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        resourceIds: e.target.checked
-                          ? [...f.resourceIds, r.id]
-                          : f.resourceIds.filter((id) => id !== r.id),
-                      }))
+        <aside>
+          <h2 className="kicker mb-4 border-b border-line pb-2">
+            {editing ? 'Edit this update' : 'Write an update'}
+          </h2>
+
+          <form onSubmit={submit} className="flex flex-col gap-4">
+            <Field label="Title" error={failure?.on('title')}>
+              {(props) => (
+                <Input
+                  {...props}
+                  value={draft.title}
+                  onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+                  placeholder="Auto Beat Marker 1.4"
+                  required
+                />
+              )}
+            </Field>
+
+            <Field label="What changed" error={failure?.on('body')}>
+              {(props) => (
+                <Textarea
+                  {...props}
+                  rows={5}
+                  value={draft.body}
+                  onChange={(event) => setDraft({ ...draft, body: event.target.value })}
+                  required
+                />
+              )}
+            </Field>
+
+            <Field label="Kind">
+              {(props) => (
+                <Select
+                  {...props}
+                  value={draft.kind}
+                  onChange={(event) =>
+                    setDraft({ ...draft, kind: event.target.value as Draft['kind'] })
+                  }
+                >
+                  {KINDS.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {titleCase(kind)}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+
+            <Field label="Status">
+              {(props) => (
+                <Select
+                  {...props}
+                  value={draft.status}
+                  onChange={(event) =>
+                    setDraft({ ...draft, status: event.target.value as Draft['status'] })
+                  }
+                >
+                  <option value="DRAFT">Draft</option>
+                  <option value="PUBLISHED">Published</option>
+                </Select>
+              )}
+            </Field>
+
+            <div>
+              <p className="mb-2 text-[13px] font-semibold">Resources this is about</p>
+              <div className="flex max-h-56 flex-col gap-2 overflow-y-auto">
+                {(resources.data?.items ?? []).map((resource) => (
+                  <Check
+                    key={resource.id}
+                    checked={draft.resourceIds.includes(resource.id)}
+                    onChange={(checked) =>
+                      setDraft({
+                        ...draft,
+                        resourceIds: checked
+                          ? [...draft.resourceIds, resource.id]
+                          : draft.resourceIds.filter((id) => id !== resource.id),
+                      })
                     }
-                    className="h-4 w-4 cursor-pointer accent-[var(--blue)]"
+                    label={resource.title}
                   />
-                  <span className="truncate text-[13.5px]">{r.title}</span>
-                </label>
-              ))
-            )}
-          </div>
-        </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-2.5">
+              <Button type="submit" variant="primary" loading={busy}>
+                {editing ? 'Save changes' : 'Write it'}
+              </Button>
+              {editing ? <Button onClick={reset}>Cancel</Button> : null}
+            </div>
+          </form>
+        </aside>
       </div>
-    </Dialog>
+
+      <Confirm
+        open={!!pending}
+        onClose={() => setPending(null)}
+        onConfirm={remove}
+        title="Delete this update?"
+        body="It disappears from the public updates page. The resources it mentions are untouched."
+        confirmLabel="Delete permanently"
+      />
+    </>
   );
 }

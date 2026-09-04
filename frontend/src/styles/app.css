@@ -4,6 +4,10 @@
 @tailwind components;
 @tailwind utilities;
 
+/* --------------------------------------------------------------------------
+   Base. Element defaults only: anything that needs a decision made about it
+   belongs in a component below or in the component that renders it.
+   -------------------------------------------------------------------------- */
 @layer base {
   *,
   *::before,
@@ -14,26 +18,31 @@
   html {
     -webkit-text-size-adjust: 100%;
     scroll-behavior: smooth;
+    /* The masthead is fixed to the top of the viewport, so anything scrolled
+       to — an anchor, a focused control, a field being filled in — has to stop
+       below it rather than under it. */
+    scroll-padding-top: calc(var(--masthead) + 12px);
   }
 
   body {
     margin: 0;
-    background: var(--paper);
-    color: var(--ink);
+    background: var(--ground);
+    color: var(--text);
     font-family: var(--face-ui);
     font-size: 16px;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* A phone should never be able to scroll sideways off the layout. */
     overflow-x: hidden;
   }
 
-  /* Headlines carry the editorial voice; the interface stays in the UI face. */
+  /* The serif carries the editorial voice; the interface stays in the UI face. */
   h1,
   h2,
   h3 {
     margin: 0;
-    font-family: var(--face);
+    font-family: var(--face-display);
     font-weight: 400;
     line-height: 1.08;
     letter-spacing: -0.015em;
@@ -65,13 +74,14 @@
 
   img,
   video {
+    display: block;
     max-width: 100%;
     height: auto;
-    display: block;
   }
 
+  /* Focus is always visible, and never removed for looks. */
   :focus-visible {
-    outline: 2px solid var(--blue);
+    outline: 2px solid var(--accent);
     outline-offset: 3px;
     border-radius: var(--r-xs);
   }
@@ -81,8 +91,8 @@
   }
 
   ::selection {
-    background: var(--blue-wash-deep);
-    color: var(--ink);
+    background: var(--accent-wash-deep);
+    color: var(--text);
   }
 
   ::-webkit-scrollbar {
@@ -90,18 +100,23 @@
     height: 12px;
   }
   ::-webkit-scrollbar-track {
-    background: var(--paper);
+    background: var(--ground);
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--rule-strong);
-    border-radius: var(--r-round);
-    border: 3px solid var(--paper);
+    background: var(--line-strong);
+    border: 3px solid var(--ground);
+    border-radius: var(--r-full);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--ink-ghost);
+    background: var(--text-4);
   }
 
-  /* Range inputs, used by the compare slider and audio scrubber. */
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--accent);
+  }
+
+  /* Ranges drive the before/after wipe and the audio scrubber. */
   input[type='range'] {
     -webkit-appearance: none;
     appearance: none;
@@ -111,8 +126,8 @@
   input[type='range']::-webkit-slider-runnable-track,
   input[type='range']::-moz-range-track {
     height: 2px;
-    border-radius: var(--r-round);
-    background: var(--rule-strong);
+    border-radius: var(--r-full);
+    background: var(--line-strong);
   }
   input[type='range']::-webkit-slider-thumb {
     -webkit-appearance: none;
@@ -121,54 +136,54 @@
     width: 16px;
     margin-top: -7px;
     border: none;
-    border-radius: var(--r-round);
-    background: var(--blue);
+    border-radius: var(--r-full);
+    background: var(--accent);
   }
   input[type='range']::-moz-range-thumb {
     height: 16px;
     width: 16px;
     border: none;
-    border-radius: var(--r-round);
-    background: var(--blue);
-  }
-
-  input[type='checkbox'],
-  input[type='radio'] {
-    accent-color: var(--blue);
+    border-radius: var(--r-full);
+    background: var(--accent);
   }
 }
 
+/* --------------------------------------------------------------------------
+   Components. The handful of patterns that repeat across every page and would
+   be unreadable as a long utility string.
+   -------------------------------------------------------------------------- */
 @layer components {
+  /* The one measure every page is set to. */
   .page {
     width: 100%;
     max-width: var(--page);
-    margin: 0 auto;
+    margin-inline: auto;
     padding-inline: var(--gutter);
   }
 
-  /* Reserve the viewport so the footer never starts high on an empty paint. */
+  /* Holding the viewport keeps the colophon off the middle of a short page. */
   main {
     display: block;
-    min-height: calc(100vh - var(--bar));
-    min-height: calc(100dvh - var(--bar));
+    min-height: calc(100vh - var(--masthead));
+    min-height: calc(100dvh - var(--masthead));
     padding-bottom: 6rem;
   }
 
-  /* A page that ends on a full-bleed band meets the colophon edge to edge,
-     so the trailing space would read as a gap rather than as breathing room. */
+  /* A page ending on a full-bleed band meets the colophon edge to edge, so
+     the trailing space would read as a gap rather than as breathing room. */
   main:has(> :last-child[data-band]) {
     padding-bottom: 0;
   }
 
   .skip-link {
     position: absolute;
-    left: 12px;
     top: -80px;
+    left: 12px;
     z-index: 200;
     padding: 10px 18px;
-    background: var(--ink);
-    color: var(--on-ink);
-    border-radius: var(--r);
+    border-radius: var(--r-md);
+    background: var(--text);
+    color: var(--text-on-fill);
     font-weight: 600;
     transition: top var(--t-fast) var(--ease);
   }
@@ -176,151 +191,134 @@
     top: 12px;
   }
 
-  /* Media reserves its ratio so nothing reflows as images arrive. */
-  .well {
+  /* Media reserves its ratio, so nothing reflows as images arrive. */
+  .frame {
     position: relative;
     overflow: hidden;
-    background: var(--paper-sunk);
+    background: var(--ground-inset);
   }
-  .well > img,
-  .well > video {
+  .frame > img,
+  .frame > video {
     position: absolute;
     inset: 0;
-    width: 100%;
     height: 100%;
+    width: 100%;
     object-fit: cover;
   }
 
-  .shimmer {
-    background: linear-gradient(
-      90deg,
-      var(--paper-sunk) 25%,
-      #1b212a 50%,
-      var(--paper-sunk) 75%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 1.4s linear infinite;
+  /* One link makes the whole card clickable without nesting interactive
+     elements inside each other, and without giving the card a second link
+     whose accessible name repeats the title. */
+  .card-link::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
   }
 
-  /* Long-form copy from the CMS. */
-  .copy {
-    color: var(--ink-soft);
+  .loading {
+    background: linear-gradient(90deg, var(--ground-inset) 25%, #1b212a 50%, var(--ground-inset) 75%);
+    background-size: 200% 100%;
+    animation: sweep 1.4s linear infinite;
+  }
+
+  /* Long-form copy written by the owner in the CMS. */
+  .prose {
+    max-width: 66ch;
+    color: var(--text-2);
     font-size: 16.5px;
     line-height: 1.72;
-    max-width: 66ch;
   }
-  .copy p + p {
+  .prose p + p {
     margin-top: 1.1em;
   }
-  .copy strong {
-    color: var(--ink);
+  .prose strong {
+    color: var(--text);
     font-weight: 600;
   }
 
-  /* Preformatted install steps keep their breaks and still wrap on a phone. */
-  .steps {
+  /* Install steps keep their own line breaks and still wrap on a phone. */
+  .instructions {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     font-family: var(--face-mono);
     font-size: 13.5px;
     line-height: 1.85;
-    color: var(--ink-soft);
+    color: var(--text-2);
   }
 
   /* A link that reads as one, with the underline doing the work. */
-  .link {
-    color: var(--blue);
+  .underlined {
+    color: var(--accent);
     text-decoration: underline;
+    text-decoration-color: var(--accent-dim);
     text-decoration-thickness: 1px;
     text-underline-offset: 3px;
-    text-decoration-color: var(--blue-lighter);
     transition: text-decoration-color var(--t-fast) var(--ease);
   }
-  .link:hover {
-    text-decoration-color: var(--blue);
+  .underlined:hover {
+    text-decoration-color: var(--accent);
   }
 
   /* Section label: small, tracked, sitting above a rule. */
-  .eyebrow {
+  .kicker {
     font-size: 11.5px;
     font-weight: 600;
     letter-spacing: 0.11em;
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--text-3);
   }
 
-  .scroll-x {
+  .swipe {
     overflow-x: auto;
-    scrollbar-width: thin;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .no-bar {
     scrollbar-width: none;
     -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
   }
-  .no-bar::-webkit-scrollbar {
+  .swipe::-webkit-scrollbar {
     display: none;
   }
 }
 
-@keyframes shimmer {
-  0% {
+@keyframes sweep {
+  from {
     background-position: 200% 0;
   }
-  100% {
+  to {
     background-position: -200% 0;
   }
 }
 
-@keyframes fade-in {
+@keyframes fade {
   from {
     opacity: 0;
   }
-  to {
-    opacity: 1;
-  }
 }
 
-@keyframes rise-in {
+@keyframes rise {
   from {
     opacity: 0;
     transform: translateY(8px);
   }
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }
 
-@keyframes sheet-up {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-
-@keyframes pop-in {
+@keyframes pop {
   from {
     opacity: 0;
     transform: scale(0.97) translateY(6px);
   }
-  to {
-    opacity: 1;
-    transform: none;
+}
+
+@keyframes sheet {
+  from {
+    transform: translateY(100%);
   }
 }
 
-@keyframes toast-in {
+@keyframes toast {
   from {
     opacity: 0;
     transform: translateY(12px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: none;
   }
 }
 
@@ -330,11 +328,11 @@
   }
 }
 
-@keyframes indeterminate {
-  0% {
+@keyframes travel {
+  from {
     transform: translateX(-100%);
   }
-  100% {
+  to {
     transform: translateX(300%);
   }
 }

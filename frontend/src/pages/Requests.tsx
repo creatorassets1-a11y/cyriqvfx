@@ -1,238 +1,214 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
-import { useAuth } from '../lib/auth';
-import { useFetch, useTitle } from '../lib/hooks';
-import {
-  Marker,
-  Button,
-  cx,
-  EmptyState,
-  MoreLink,
-  Sheet,
-  Skeleton,
-  TextArea,
-  TextField,
-  useToast,
-} from '../components/ui';
-import { Icon } from '../components/Icon';
-import { formatRelative } from '../lib/format';
-import { PageError } from '../components/Layout';
+import { useLoad } from '../lib/hooks';
+import { useSession } from '../lib/session';
+import type { ResourceRequest } from '../lib/types';
+import { formatRelative, titleCase } from '../lib/format';
+import { PageError } from '../components/Chrome';
+import { Icon } from '../ui/Icon';
+import { Button, Empty, Field, Input, Marker, Note, Textarea, cx } from '../ui/primitives';
+import { useToast } from '../ui/Toast';
 
-interface RequestItem {
-  id: string;
-  title: string;
-  description: string;
-  software: string | null;
-  status: 'RECEIVED' | 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'DECLINED';
-  adminNote: string | null;
-  voteCount: number;
-  createdAt: string;
-  voted: boolean;
-}
+/**
+ * Requests.
+ *
+ * What people ask for is the clearest signal about what to make next, so the
+ * board is public and the votes are visible. Asking and voting need an account
+ * — not to gate anything, but because a vote has to belong to someone to mean
+ * anything at all.
+ */
 
-const STATUS = {
-  RECEIVED: { label: 'Received', tone: 'neutral' },
-  PLANNED: { label: 'Planned', tone: 'blue' },
-  IN_PROGRESS: { label: 'In progress', tone: 'warn' },
-  COMPLETED: { label: 'Done', tone: 'go' },
-  DECLINED: { label: 'Not planned', tone: 'neutral' },
-} as const;
+const TONES: Record<string, 'neutral' | 'accent' | 'positive' | 'caution'> = {
+  RECEIVED: 'neutral',
+  PLANNED: 'accent',
+  IN_PROGRESS: 'accent',
+  COMPLETED: 'positive',
+  DECLINED: 'caution',
+};
 
-/** Resource requests (PRD §26). Shows what editors actually want. */
 export default function Requests() {
-  const { user } = useAuth();
+  const { user } = useSession();
   const { toast } = useToast();
-  const { data, loading, error, reload } = useFetch<{ items: RequestItem[] }>('/requests');
-  const [formOpen, setFormOpen] = useState(false);
-  const [votingId, setVotingId] = useState<string | null>(null);
+  const { data, error, loading, reload } = useLoad<{ items: ResourceRequest[] }>('/requests');
 
-  useTitle('Requests · Cyriq VFX');
-
-  const vote = async (item: RequestItem) => {
-    if (!user) {
-      toast('Sign in to vote on requests.', 'info');
-      return;
-    }
-    setVotingId(item.id);
-    try {
-      await api.post(`/requests/${item.id}/vote`);
-      reload();
-    } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'That vote did not go through.', 'error');
-    } finally {
-      setVotingId(null);
-    }
-  };
-
-  if (error) return <PageError onRetry={reload} />;
-
-  return (
-    <div className="page py-10 md:py-16">
-      <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4 border-b border-ink pb-4">
-        <div className="min-w-0">
-          <p className="eyebrow">Wanted</p>
-          <h1 className="mt-2 text-[38px] leading-[1.05] md:text-[52px]">Requests</h1>
-          <p className="copy mt-3">
-            What editors have asked for, and what is being worked on. Vote for what you want next.
-          </p>
-        </div>
-        {user ? (
-          <Button variant="primary" icon="plus" onClick={() => setFormOpen(true)}>
-            Request something
-          </Button>
-        ) : (
-          <MoreLink to="/login">Sign in to request</MoreLink>
-        )}
-      </header>
-
-      {loading ? (
-        <div className="mt-8 flex flex-col gap-6">
-          {Array.from({ length: 4 }, (_, i) => (
-            <Skeleton key={i} className="h-24" />
-          ))}
-        </div>
-      ) : !data || data.items.length === 0 ? (
-        <EmptyState
-          icon="inbox"
-          title="No requests yet"
-          description="Be the first to ask for something: a tool, a pack, or a tutorial topic."
-          action={
-            user ? (
-              <Button variant="primary" onClick={() => setFormOpen(true)}>
-                Request something
-              </Button>
-            ) : undefined
-          }
-        />
-      ) : (
-        <ul className="mt-4 flex flex-col">
-          {data.items.map((item) => {
-            const status = STATUS[item.status];
-            return (
-              <li key={item.id} className="flex gap-6 border-b border-rule py-6">
-                <button
-                  onClick={() => vote(item)}
-                  disabled={votingId === item.id}
-                  aria-pressed={item.voted}
-                  aria-label={
-                    item.voted ? `Remove your vote from ${item.title}` : `Vote for ${item.title}`
-                  }
-                  className={cx(
-                    'flex w-12 shrink-0 flex-col items-center gap-0.5 self-start transition-colors duration-fast',
-                    item.voted ? 'text-blue' : 'text-ghost hover:text-ink',
-                  )}
-                >
-                  <Icon name="chevron-down" size={16} className="rotate-180" />
-                  <span className="font-mono text-[15px]">{item.voteCount}</span>
-                </button>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2">
-                    <h2 className="font-display text-[20px] leading-tight">{item.title}</h2>
-                    <Marker tone={status.tone}>{status.label}</Marker>
-                    {item.software ? <Marker tone="neutral">{item.software}</Marker> : null}
-                  </div>
-                  <p className="mt-2 text-[14px] leading-relaxed text-soft">{item.description}</p>
-                  {item.adminNote ? (
-                    <p className="mt-3 flex items-start gap-2 border-l-2 border-blue pl-4 text-[13.5px] text-soft">
-                      <Icon name="info" size={13} className="mt-1 shrink-0 text-blue" />
-                      {item.adminNote}
-                    </p>
-                  ) : null}
-                  <p className="mt-3 font-mono text-[11.5px] text-ghost">
-                    {formatRelative(item.createdAt)}
-                  </p>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      <RequestForm open={formOpen} onClose={() => setFormOpen(false)} onCreated={reload} />
-    </div>
-  );
-}
-
-function RequestForm({
-  open,
-  onClose,
-  onCreated,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const { toast } = useToast();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [software, setSoftware] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<ApiError | null>(null);
+  const [failure, setFailure] = useState<ApiError | null>(null);
+  const [sending, setSending] = useState(false);
 
-  const submit = async () => {
-    setBusy(true);
-    setError(null);
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setSending(true);
+    setFailure(null);
+
     try {
       await api.post('/requests', {
         title,
         description,
         software: software || null,
       });
-      toast('Request posted.', 'success');
       setTitle('');
       setDescription('');
       setSoftware('');
-      onCreated();
-      onClose();
+      toast('Request posted. Thanks.', 'success');
+      reload();
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err);
-        toast(err.message, 'error');
-      }
+      if (err instanceof ApiError) setFailure(err);
+      else toast('That could not be sent.', 'error');
     } finally {
-      setBusy(false);
+      setSending(false);
     }
-  };
+  }
+
+  async function vote(request: ResourceRequest) {
+    try {
+      await api.post(`/requests/${request.id}/vote`);
+      reload();
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'That vote did not register.', 'error');
+    }
+  }
+
+  if (error) return <PageError onRetry={reload} />;
 
   return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title="Request a resource"
-      footer={
-        <Button variant="primary" fullWidth loading={busy} onClick={submit}>
-          Post request
-        </Button>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        <TextField
-          label="What do you need?"
-          required
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="A script that renames layers by their contents"
-          error={error?.fieldError('title')}
-          data-autofocus
-        />
-        <TextArea
-          label="Why would it help?"
-          required
-          rows={4}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Describe the workflow problem it would solve."
-          error={error?.fieldError('description')}
-        />
-        <TextField
-          label="Software"
-          value={software}
-          onChange={(e) => setSoftware(e.target.value)}
-          placeholder="After Effects"
-          hint="Optional."
-        />
+    <div className="page py-10 md:py-14">
+      <header className="mb-10 max-w-2xl">
+        <h1 className="text-[34px] md:text-[42px]">Request a resource</h1>
+        <p className="prose mt-3">
+          Missing something you keep needing? Ask for it here, and vote for what other editors have
+          already asked for. What gets made next comes off this list.
+        </p>
+      </header>
+
+      <div className="grid gap-12 lg:grid-cols-[1fr_340px] lg:gap-16">
+        <div className="min-w-0">
+          {loading && !data ? null : data && data.items.length ? (
+            <ul className="flex flex-col">
+              {data.items.map((request) => (
+                <li key={request.id} className="flex gap-5 border-b border-line py-5 first:border-t">
+                  <button
+                    type="button"
+                    onClick={() => (user ? vote(request) : undefined)}
+                    disabled={!user}
+                    aria-label={`Vote for ${request.title}`}
+                    aria-pressed={request.voted ?? false}
+                    className={cx(
+                      'flex h-14 w-12 shrink-0 flex-col items-center justify-center gap-0.5 rounded border transition-colors duration-fast ease-out',
+                      request.voted
+                        ? 'border-accent text-accent'
+                        : 'border-line-strong text-text-3',
+                      user ? 'hover:border-accent hover:text-accent' : 'cursor-default opacity-70',
+                    )}
+                  >
+                    <Icon name="chevron-up" size={14} />
+                    <span className="font-mono text-[13px]">{request.voteCount}</span>
+                  </button>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                      <h2 className="font-sans text-[15.5px] font-semibold">{request.title}</h2>
+                      <Marker tone={TONES[request.status] ?? 'neutral'}>
+                        {titleCase(request.status)}
+                      </Marker>
+                      <span className="ml-auto font-mono text-[11.5px] text-text-4">
+                        {formatRelative(request.createdAt)}
+                      </span>
+                    </div>
+
+                    <p className="mt-1.5 text-[13.5px] leading-relaxed text-text-2">
+                      {request.description}
+                    </p>
+
+                    {request.software ? (
+                      <p className="mt-1.5 font-mono text-[11.5px] text-text-4">
+                        {request.software}
+                      </p>
+                    ) : null}
+
+                    {request.adminNote ? (
+                      <div className="mt-3">
+                        <Note tone="accent">{request.adminNote}</Note>
+                      </div>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <Empty
+              icon="flag"
+              title="Nothing has been requested yet"
+              body="Be the first to ask for something."
+            />
+          )}
+        </div>
+
+        <aside>
+          <h2 className="kicker mb-4 border-b border-line pb-2">Ask for something</h2>
+
+          {user ? (
+            <form onSubmit={submit} className="flex flex-col gap-4">
+              <Field label="What do you need?" error={failure?.on('title')}>
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={title}
+                    onChange={(event) => setTitle(event.target.value)}
+                    placeholder="Anime speed-ramp transitions"
+                    required
+                  />
+                )}
+              </Field>
+
+              <Field
+                label="A little more detail"
+                hint="What are you editing, and what would this let you do?"
+                error={failure?.on('description')}
+              >
+                {(props) => (
+                  <Textarea
+                    {...props}
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                    rows={4}
+                    required
+                  />
+                )}
+              </Field>
+
+              <Field label="Software" optional error={failure?.on('software')}>
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={software}
+                    onChange={(event) => setSoftware(event.target.value)}
+                    placeholder="After Effects"
+                  />
+                )}
+              </Field>
+
+              {failure && failure.issues.length === 0 ? (
+                <Note tone="critical">{failure.message}</Note>
+              ) : null}
+
+              <Button type="submit" variant="primary" loading={sending}>
+                Post the request
+              </Button>
+            </form>
+          ) : (
+            <Note tone="accent">
+              <Link to="/login" className="underlined">
+                Sign in
+              </Link>{' '}
+              to post a request or vote. Downloading never needs an account — this does, so a vote
+              counts once.
+            </Note>
+          )}
+        </aside>
       </div>
-    </Sheet>
+    </div>
   );
 }

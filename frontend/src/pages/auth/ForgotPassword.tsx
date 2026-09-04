@@ -2,72 +2,78 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../../lib/api';
 import { useTitle } from '../../lib/hooks';
-import { Button, TextField } from '../../components/ui';
-import { Icon } from '../../components/Icon';
+import { Button, Field, Input, Note } from '../../ui/primitives';
 import { AuthShell } from './AuthShell';
 
+/**
+ * Asking for a reset link.
+ *
+ * The confirmation is the same whether or not that address has an account, so
+ * this form cannot be used to find out who is registered here.
+ */
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
+  const [message, setMessage] = useState<string | null>(null);
+  const [failure, setFailure] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState<ApiError | null>(null);
+
   useTitle('Reset your password · Cyriq VFX');
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
     setBusy(true);
-    setError(null);
+    setFailure(null);
+
     try {
-      await api.post('/auth/forgot-password', { email });
-      setSent(true);
+      const result = await api.post<{ message: string }>('/auth/forgot-password', { email });
+      setMessage(result.message);
     } catch (err) {
-      if (err instanceof ApiError) setError(err);
+      if (err instanceof ApiError) setFailure(err);
     } finally {
       setBusy(false);
     }
-  };
-
-  if (sent) {
-    return (
-      <AuthShell title="Check your inbox">
-        <div className="flex flex-col items-start gap-3">
-          <Icon name="check" size={22} className="text-go" />
-          <p className="text-[14px] leading-relaxed text-soft">
-            If that email has an account, a reset link is on its way. It expires in an hour.
-          </p>
-          <Link to="/login" className="link text-[14px]">
-            Back to sign in
-          </Link>
-        </div>
-      </AuthShell>
-    );
   }
 
   return (
     <AuthShell
       title="Reset your password"
-      subtitle="Enter your email and we will send you a link."
+      subtitle="We will send a link that lets you set a new one."
       footer={
-        <Link to="/login" className="link font-medium">
-          Back to sign in
-        </Link>
+        <>
+          Remembered it?{' '}
+          <Link to="/login" className="underlined">
+            Sign in
+          </Link>
+          .
+        </>
       }
     >
-      <form onSubmit={submit} className="flex flex-col gap-4">
-        <TextField
-          label="Email"
-          type="email"
-          required
-          autoFocus
-          autoComplete="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          error={error?.fieldError('email')}
-        />
-        <Button type="submit" variant="primary" size="lg" fullWidth loading={busy}>
-          Send reset link
-        </Button>
-      </form>
+      {message ? (
+        <Note tone="positive">{message}</Note>
+      ) : (
+        <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
+          <Field label="Email" error={failure?.on('email')}>
+            {(props) => (
+              <Input
+                {...props}
+                type="email"
+                autoComplete="email"
+                autoFocus
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            )}
+          </Field>
+
+          {failure && failure.issues.length === 0 ? (
+            <Note tone="critical">{failure.message}</Note>
+          ) : null}
+
+          <Button type="submit" variant="primary" size="lg" block loading={busy}>
+            Send the link
+          </Button>
+        </form>
+      )}
     </AuthShell>
   );
 }

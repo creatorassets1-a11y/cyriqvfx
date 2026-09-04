@@ -1,91 +1,92 @@
-import { StrictMode, Suspense, lazy, Component, type ReactNode } from 'react';
+import { Component, StrictMode, Suspense, lazy, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Route, Routes, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import './styles/app.css';
-import { AuthProvider, useAuth } from './lib/auth';
-import { ToastProvider, Button } from './components/ui';
-import { Footer, Header, ScrollReset } from './components/Layout';
-import { ResourceCardSkeleton } from './components/ResourceCard';
+import { SessionProvider, useSession } from './lib/session';
+import { ToastProvider } from './ui/Toast';
+import { Button } from './ui/primitives';
+import { Colophon, Masthead, ScrollReset } from './components/Chrome';
+import { CardGridSkeleton } from './components/ResourceCard';
 
 /**
- * Route-based code splitting (PRD §5). The home and library routes are the
- * common entry points; account and admin bundles never reach a visitor who
+ * The shell.
+ *
+ * Every route is loaded on demand. The public pages are what a visitor arrives
+ * for, so they are the only thing the first request pays for; the account and
+ * owner areas are whole applications of their own that never reach someone who
  * does not open them.
  */
+
 const Home = lazy(() => import('./pages/Home'));
-const Resources = lazy(() => import('./pages/Resources'));
-const ResourceDetail = lazy(() => import('./pages/ResourceDetail'));
-const Categories = lazy(() => import('./pages/Categories'));
-const CategoryDetail = lazy(() => import('./pages/CategoryDetail'));
-const Tutorials = lazy(() => import('./pages/Tutorials'));
-const TutorialDetail = lazy(() => import('./pages/TutorialDetail'));
+const Library = lazy(() => import('./pages/Library'));
+const ResourcePage = lazy(() => import('./pages/ResourcePage'));
+const CategoryIndex = lazy(() => import('./pages/CategoryIndex'));
+const CategoryPage = lazy(() => import('./pages/CategoryPage'));
+const TutorialIndex = lazy(() => import('./pages/TutorialIndex'));
+const TutorialPage = lazy(() => import('./pages/TutorialPage'));
 const Updates = lazy(() => import('./pages/Updates'));
 const About = lazy(() => import('./pages/About'));
 const Requests = lazy(() => import('./pages/Requests'));
-const Report = lazy(() => import('./pages/Report'));
-const DownloadPage = lazy(() => import('./pages/DownloadPage'));
+const ReportProblem = lazy(() => import('./pages/ReportProblem'));
+const ShareLink = lazy(() => import('./pages/ShareLink'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
-const Login = lazy(() => import('./pages/auth/Login'));
-const Register = lazy(() => import('./pages/auth/Register'));
+const SignIn = lazy(() => import('./pages/auth/SignIn'));
+const SignUp = lazy(() => import('./pages/auth/SignUp'));
 const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'));
-const VerifyEmail = lazy(() => import('./pages/auth/VerifyEmail'));
+const ConfirmEmail = lazy(() => import('./pages/auth/ConfirmEmail'));
 
-const Account = lazy(() => import('./pages/account/Account'));
-const Admin = lazy(() => import('./pages/admin/Admin'));
+const AccountArea = lazy(() => import('./pages/account/AccountArea'));
+const OwnerArea = lazy(() => import('./pages/admin/OwnerArea'));
 
-/** Catches render errors so one broken page never blanks the whole site. */
-class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
-  state = { error: null as Error | null };
+/** One page failing to render must never take the whole site down with it. */
+class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
 
-  static getDerivedStateFromError(error: Error) {
-    return { error };
+  static getDerivedStateFromError() {
+    return { failed: true };
   }
 
   componentDidCatch(error: Error) {
-    // Kept in the console rather than swallowed, so a bug is still findable.
-    console.error('Render error:', error);
+    // Left in the console rather than swallowed, so the bug stays findable.
+    console.error('Render failed:', error);
   }
 
   render() {
-    if (this.state.error) {
-      return (
-        <div className="page flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
-          <h1 className="text-[22px] font-semibold">This page hit a problem</h1>
-          <p className="max-w-sm text-[14px] text-soft">
-            Something in the page failed to render. Reloading usually clears it.
-          </p>
-          <Button variant="primary" icon="refresh" onClick={() => window.location.reload()}>
-            Reload the page
-          </Button>
-        </div>
-      );
-    }
-    return this.props.children;
+    if (!this.state.failed) return this.props.children;
+
+    return (
+      <div className="page flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
+        <h1 className="text-[24px]">This page hit a problem</h1>
+        <p className="max-w-sm text-[14px] leading-relaxed text-text-3">
+          Something on this page failed to render. Reloading usually clears it.
+        </p>
+        <Button variant="primary" icon="refresh" onClick={() => window.location.reload()}>
+          Reload the page
+        </Button>
+      </div>
+    );
   }
 }
 
+/** Held space while a route's code arrives, shaped like what is coming. */
 function RouteFallback() {
   return (
     <div className="page py-10">
-      <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {Array.from({ length: 4 }, (_, i) => (
-          <ResourceCardSkeleton key={i} />
-        ))}
-      </div>
+      <CardGridSkeleton count={4} />
     </div>
   );
 }
 
-/** Sends a signed-out visitor to sign in, remembering where they were headed. */
-function RequireAuth({ children, adminOnly }: { children: ReactNode; adminOnly?: boolean }) {
-  const { user, loading, isAdmin } = useAuth();
+/** Sends a signed-out visitor to sign in, remembering where they meant to go. */
+function Private({ children, ownerOnly }: { children: ReactNode; ownerOnly?: boolean }) {
+  const { user, loading, isAdmin } = useSession();
   const location = useLocation();
 
   if (loading) return <RouteFallback />;
   if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
-  if (adminOnly && !isAdmin) return <Navigate to="/" replace />;
+  if (ownerOnly && !isAdmin) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -96,53 +97,55 @@ function App() {
         Skip to content
       </a>
       <ScrollReset />
-      <Header />
+      <Masthead />
+
       <main id="main" tabIndex={-1}>
-        <ErrorBoundary>
+        <Boundary>
           <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/" element={<Home />} />
-              <Route path="/resources" element={<Resources />} />
-              <Route path="/resources/:slug" element={<ResourceDetail />} />
-              <Route path="/categories" element={<Categories />} />
-              <Route path="/categories/:slug" element={<CategoryDetail />} />
-              <Route path="/tutorials" element={<Tutorials />} />
-              <Route path="/tutorials/:slug" element={<TutorialDetail />} />
+              <Route path="/resources" element={<Library />} />
+              <Route path="/resources/:slug" element={<ResourcePage />} />
+              <Route path="/categories" element={<CategoryIndex />} />
+              <Route path="/categories/:slug" element={<CategoryPage />} />
+              <Route path="/tutorials" element={<TutorialIndex />} />
+              <Route path="/tutorials/:slug" element={<TutorialPage />} />
               <Route path="/updates" element={<Updates />} />
               <Route path="/about" element={<About />} />
               <Route path="/requests" element={<Requests />} />
-              <Route path="/report" element={<Report />} />
-              <Route path="/download/:token" element={<DownloadPage />} />
+              <Route path="/report" element={<ReportProblem />} />
+              <Route path="/download/:token" element={<ShareLink />} />
 
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
+              <Route path="/login" element={<SignIn />} />
+              <Route path="/register" element={<SignUp />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/verify-email" element={<VerifyEmail />} />
+              <Route path="/verify-email" element={<ConfirmEmail />} />
 
               <Route
                 path="/account/*"
                 element={
-                  <RequireAuth>
-                    <Account />
-                  </RequireAuth>
+                  <Private>
+                    <AccountArea />
+                  </Private>
                 }
               />
               <Route
                 path="/admin/*"
                 element={
-                  <RequireAuth adminOnly>
-                    <Admin />
-                  </RequireAuth>
+                  <Private ownerOnly>
+                    <OwnerArea />
+                  </Private>
                 }
               />
 
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
-        </ErrorBoundary>
+        </Boundary>
       </main>
-      <Footer />
+
+      <Colophon />
     </>
   );
 }
@@ -150,11 +153,11 @@ function App() {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <AuthProvider>
+      <SessionProvider>
         <ToastProvider>
           <App />
         </ToastProvider>
-      </AuthProvider>
+      </SessionProvider>
     </BrowserRouter>
   </StrictMode>,
 );

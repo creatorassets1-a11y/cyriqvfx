@@ -1,7 +1,12 @@
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Mark } from '../../components/Logo';
+import { useSession } from '../../lib/session';
+import { Brand } from '../../components/Brand';
 
-/** Shared frame for the sign-in and sign-up flows. */
+/**
+ * The frame every sign-in screen shares. It keeps the way out visible: the
+ * library is one click away, because nothing here is required to use the site.
+ */
 export function AuthShell({
   title,
   subtitle,
@@ -10,28 +15,31 @@ export function AuthShell({
 }: {
   title: string;
   subtitle?: string;
-  children: React.ReactNode;
-  footer?: React.ReactNode;
+  children: ReactNode;
+  footer?: ReactNode;
 }) {
+  const { settings } = useSession();
+
   return (
-    <div className="page flex min-h-[75vh] items-start justify-center py-16 md:py-24">
+    <div className="page flex min-h-[80vh] items-center justify-center py-14">
       <div className="w-full max-w-sm">
-        <Link to="/" aria-label="Home" className="inline-block">
-          <Mark size={40} />
-        </Link>
+        <Brand name={settings?.siteName ?? 'Cyriq VFX'} className="mb-9" />
 
-        <h1 className="mt-6 text-[32px] leading-[1.08]">{title}</h1>
-        {subtitle ? <p className="copy mt-3 text-[15px]">{subtitle}</p> : null}
+        <h1 className="text-[30px] leading-tight">{title}</h1>
+        {subtitle ? (
+          <p className="mt-2 text-[14px] leading-relaxed text-text-3">{subtitle}</p>
+        ) : null}
 
-        <div className="mt-8 border-t border-ink pt-7">{children}</div>
+        <div className="mt-8">{children}</div>
 
-        {footer ? <div className="mt-6 text-[13.5px] text-soft">{footer}</div> : null}
+        {footer ? <div className="mt-7 text-[13.5px] text-text-3">{footer}</div> : null}
 
-        <p className="mt-8 border-t border-rule pt-5 text-[12.5px] text-faint">
-          You never need an account to download.{' '}
-          <Link to="/resources" className="link">
-            Just browse
+        <p className="mt-10 border-t border-line pt-5 text-[12.5px] text-text-4">
+          Downloading never needs an account.{' '}
+          <Link to="/resources" className="underlined">
+            Go straight to the library
           </Link>
+          .
         </p>
       </div>
     </div>

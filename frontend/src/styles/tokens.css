@@ -1,75 +1,80 @@
 /**
  * Design tokens.
  *
- * Black ground, white type, one light blue accent lifted from the mark. The
- * deep navy of the logo is the only other ground used. Structure comes from
- * space, alignment and hairlines, never from boxing every piece of content.
+ * The whole interface is built from a black ground, white type and one light
+ * blue lifted from the mark, with the mark's deep navy as the only second
+ * ground. Structure is carried by hairlines, alignment and space rather than
+ * by boxing every piece of content, so there are far more line and spacing
+ * tokens here than there are fills.
+ *
+ * Everything below is exposed to Tailwind by name in tailwind.config.js, so a
+ * colour, radius or duration is changed here and nowhere else.
  */
 
 :root {
   color-scheme: dark;
 
-  /* Ground */
-  --paper: #000000;
-  --paper-sunk: #0c0f14;
-  /* Surfaces that genuinely float need to sit above the ground to be read. */
-  --paper-lift: #14181f;
+  /* --- Grounds ------------------------------------------------------- */
+  --ground: #000000;
+  /* A recessed well: media boxes, code, empty states. */
+  --ground-inset: #0b0e13;
+  /* A surface that genuinely floats has to clear the ground to be read. */
+  --ground-raised: #13171e;
+  --ground-raised-hover: #191e26;
 
-  /* Type */
-  --ink: #ffffff;
-  --ink-soft: #b8bec9;
-  --ink-faint: #8a919e;
-  --ink-ghost: #767d8b;
-  /* Type placed on top of an ink-coloured fill. */
-  --on-ink: #000000;
+  /* --- Type ---------------------------------------------------------- */
+  --text: #ffffff;
+  --text-2: #b9bfca;
+  --text-3: #8b929f;
+  --text-4: #6f7683;
+  /* Type sitting on a white or light blue fill. */
+  --text-on-fill: #000000;
 
-  /* Hairlines. Structure is a line, not a border on a box. */
-  --rule: #1c212a;
-  --rule-strong: #2f3641;
+  /* --- Hairlines ----------------------------------------------------- */
+  --line: #1b202a;
+  --line-strong: #2e3540;
 
-  /* Blue, taken from the mark. Deep navy grounds it, light blue lifts it. */
+  /* --- Blue ---------------------------------------------------------- */
+  --accent: #6fb6f2;
+  --accent-bright: #9bcff8;
+  --accent-dim: #2c5f8c;
+  --accent-wash: #0b1a29;
+  --accent-wash-deep: #12283e;
+  --accent-ring: rgba(111, 182, 242, 0.42);
   --navy: #003162;
   --navy-deep: #041e43;
-  --navy-ring: #0a4175;
-  --blue: #6fb6f2;
-  --blue-hover: #9bcff8;
-  --blue-light: #a6d3f7;
-  --blue-lighter: #2c5f8c;
-  --blue-wash: #0b1a29;
-  --blue-wash-deep: #12283e;
-  --blue-ring: rgba(111, 182, 242, 0.4);
 
-  /* State. Used only for state. */
-  --go: #4ec38f;
-  --go-wash: #0b1d16;
-  --warn: #e3a63f;
-  --warn-wash: #1f1708;
-  --stop: #f4677f;
-  --stop-wash: #240d12;
+  /* --- State. Used for state and nothing else. ------------------------ */
+  --positive: #4ec38f;
+  --positive-wash: #0b1d16;
+  --caution: #e3a63f;
+  --caution-wash: #1f1708;
+  --critical: #f4677f;
+  --critical-wash: #240d12;
 
-  /* Scrim behind an overlay. */
-  --scrim: rgba(0, 0, 0, 0.72);
+  /* --- Overlay ------------------------------------------------------- */
+  --scrim: rgba(0, 0, 0, 0.74);
 
-  /* Faces */
-  --face: 'Georgia', 'Iowan Old Style', 'Times New Roman', serif;
-  --face-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI',
-    Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif;
-  --face-mono: ui-monospace, SFMono-Regular, 'SF Mono', 'Cascadia Mono', 'Roboto Mono',
-    Menlo, Consolas, monospace;
+  /* --- Faces. No webfont: the first paint is never blocked on one. ---- */
+  --face-display: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  --face-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', Roboto,
+    'Helvetica Neue', 'Noto Sans', Arial, sans-serif;
+  --face-mono: ui-monospace, SFMono-Regular, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', Menlo,
+    Consolas, monospace;
 
-  /* Radii. Almost nothing is rounded; media and controls only. */
+  /* --- Radii. Only media and controls are rounded. -------------------- */
   --r-xs: 2px;
   --r-sm: 4px;
-  --r: 6px;
+  --r-md: 6px;
   --r-lg: 10px;
-  --r-round: 999px;
+  --r-full: 999px;
 
-  /* Elevation. On a black ground a shadow does little, so a floating surface
-     is lifted by its own fill and outlined by a hairline as well. */
-  --lift: 0 1px 2px rgba(0, 0, 0, 0.6), 0 8px 24px rgba(0, 0, 0, 0.55);
-  --lift-high: 0 2px 4px rgba(0, 0, 0, 0.7), 0 24px 56px rgba(0, 0, 0, 0.7);
+  /* --- Elevation. A shadow does little on black, so a floating surface
+         is lifted by its own fill and outlined by a hairline as well. --- */
+  --raise: 0 1px 2px rgba(0, 0, 0, 0.6), 0 8px 24px rgba(0, 0, 0, 0.55);
+  --raise-high: 0 2px 4px rgba(0, 0, 0, 0.7), 0 24px 56px rgba(0, 0, 0, 0.7);
 
-  /* Motion */
+  /* --- Motion -------------------------------------------------------- */
   --t-instant: 90ms;
   --t-fast: 150ms;
   --t-normal: 240ms;
@@ -77,16 +82,16 @@
   --ease: cubic-bezier(0.22, 0.85, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
 
-  /* Measure */
+  /* --- Measure ------------------------------------------------------- */
   --page: 1200px;
   --gutter: 20px;
-  --bar: 64px;
+  --masthead: 64px;
 }
 
 @media (min-width: 768px) {
   :root {
     --gutter: 40px;
-    --bar: 76px;
+    --masthead: 76px;
   }
 }
 
@@ -96,6 +101,11 @@
   }
 }
 
+/**
+ * Reduced motion is a preference, not a hint. Collapsing the duration tokens
+ * themselves means every transition written against them stops too, including
+ * ones declared inline, without each of them having to remember to ask.
+ */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --t-instant: 1ms;

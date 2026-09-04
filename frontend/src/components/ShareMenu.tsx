@@ -1,132 +1,92 @@
-import { useCallback, useState } from 'react';
-import { useCopy, useDismissable } from '../lib/hooks';
-import { Button, cx, useToast } from './ui';
-import { Icon } from './Icon';
+import { useCopy } from '../lib/hooks';
+import { Icon } from '../ui/Icon';
+import { Menu, MenuButton, MenuHeading, MenuRule } from '../ui/Menu';
+import { useToast } from '../ui/Toast';
 
 /**
- * Sharing (PRD §30). Two distinct actions, because they mean different things:
- * the resource link is the page, the download link is the permanent, public,
- * shareable file URL the owner asked for.
+ * Sharing.
+ *
+ * Two links, and they are different things: the page, which is what someone
+ * shares in a conversation, and the permanent download link, which downloads
+ * the current version for whoever opens it, forever, without an account. The
+ * device's own share sheet is used when it exists, because it is better than
+ * anything this page could draw.
  */
+
 export function ShareMenu({
   title,
-  resourcePath,
+  path,
   downloadToken,
 }: {
   title: string;
-  resourcePath: string;
+  path: string;
   downloadToken?: string;
 }) {
-  const [open, setOpen] = useState(false);
   const { toast } = useToast();
   const [, copy] = useCopy();
-  const ref = useDismissable<HTMLDivElement>(open, () => setOpen(false));
 
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const resourceUrl = `${origin}${resourcePath}`;
+  const origin = typeof window === 'undefined' ? '' : window.location.origin;
+  const pageUrl = `${origin}${path}`;
   const downloadUrl = downloadToken ? `${origin}/download/${downloadToken}` : null;
 
-  const copyTo = useCallback(
-    async (url: string, what: string) => {
-      const ok = await copy(url);
-      toast(ok ? `${what} copied` : 'Could not copy. Select the link and copy it manually.', ok ? 'success' : 'error');
-      setOpen(false);
-    },
-    [copy, toast],
-  );
+  async function copyTo(url: string, what: string) {
+    const ok = await copy(url);
+    toast(ok ? `${what} copied.` : 'That could not be copied.', ok ? 'success' : 'error');
+  }
 
-  const nativeShare = useCallback(async () => {
-    try {
-      await navigator.share({ title, url: resourceUrl });
-      setOpen(false);
-    } catch (err) {
-      // A cancelled share is not a failure worth reporting.
-      if ((err as Error)?.name !== 'AbortError') {
-        void copyTo(resourceUrl, 'Link');
-      }
-    }
-  }, [title, resourceUrl, copyTo]);
-
-  const canNativeShare = typeof navigator !== 'undefined' && !!navigator.share;
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 
   return (
-    <div className="relative" ref={ref}>
-      <Button
-        icon="share"
-        onClick={() => (canNativeShare ? void nativeShare() : setOpen((o) => !o))}
-        aria-expanded={canNativeShare ? undefined : open}
-        aria-haspopup={canNativeShare ? undefined : 'menu'}
-      >
-        Share
-      </Button>
-
-      {open ? (
-        <div
-          role="menu"
-          className={cx(
-            'absolute right-0 top-full z-30 mt-2 w-64 overflow-hidden rounded',
-            'bg-lift shadow-high ring-1 ring-rule animate-pop-in',
-          )}
-        >
-          <MenuItem icon="link" onClick={() => copyTo(resourceUrl, 'Resource link')}>
-            Copy resource link
-          </MenuItem>
-          {downloadUrl ? (
-            <MenuItem icon="download" onClick={() => copyTo(downloadUrl, 'Download link')}>
-              Copy download link
-            </MenuItem>
-          ) : null}
-          <div className="border-t border-rule">
-            <MenuItem
-              icon="external"
-              onClick={() => {
-                window.open(
-                  `https://twitter.com/intent/tweet?text=${encodeURIComponent(title)}&url=${encodeURIComponent(resourceUrl)}`,
-                  '_blank',
-                  'noopener,noreferrer',
-                );
-                setOpen(false);
-              }}
-            >
-              Share on X
-            </MenuItem>
-            <MenuItem
-              icon="external"
-              onClick={() => {
-                window.open(
-                  `https://reddit.com/submit?url=${encodeURIComponent(resourceUrl)}&title=${encodeURIComponent(title)}`,
-                  '_blank',
-                  'noopener,noreferrer',
-                );
-                setOpen(false);
-              }}
-            >
-              Share on Reddit
-            </MenuItem>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function MenuItem({
-  icon,
-  children,
-  onClick,
-}: {
-  icon: 'link' | 'download' | 'external';
-  children: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      role="menuitem"
-      onClick={onClick}
-      className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13.5px] text-soft transition-colors duration-fast hover:bg-sunk hover:text-ink"
+    <Menu
+      label="Share"
+      trigger={() => (
+        <span className="flex h-10 items-center gap-2 rounded border border-line-strong px-3.5 text-[14px] font-semibold">
+          <Icon name="share" size={15} />
+          Share
+        </span>
+      )}
+      width="w-64"
     >
-      <Icon name={icon} size={15} />
-      {children}
-    </button>
+      {({ close }) => (
+        <>
+          <MenuHeading>{title}</MenuHeading>
+          {canShare ? (
+            <MenuButton
+              icon="share"
+              onSelect={() => {
+                close();
+                navigator.share({ title, url: pageUrl }).catch(() => {});
+              }}
+            >
+              Share…
+            </MenuButton>
+          ) : null}
+          <MenuButton
+            icon="link"
+            onSelect={() => {
+              close();
+              void copyTo(pageUrl, 'Page link');
+            }}
+          >
+            Copy page link
+          </MenuButton>
+          {downloadUrl ? (
+            <>
+              <MenuRule />
+              <MenuButton
+                icon="download"
+                onSelect={() => {
+                  close();
+                  void copyTo(downloadUrl, 'Download link');
+                }}
+              >
+                Copy download link
+              </MenuButton>
+              <MenuHeading>Downloads the current version, no account needed.</MenuHeading>
+            </>
+          ) : null}
+        </>
+      )}
+    </Menu>
   );
 }

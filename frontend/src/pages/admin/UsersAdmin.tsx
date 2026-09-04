@@ -1,16 +1,25 @@
 import { useState } from 'react';
-import { api, ApiError } from '../../lib/api';
-import { useDebounced, useFetch } from '../../lib/hooks';
-import { Marker, Button, ConfirmDialog, EmptyState, Skeleton, useToast } from '../../components/ui';
-import { Icon } from '../../components/Icon';
-import { formatDate } from '../../lib/format';
+import { api, ApiError, query } from '../../lib/api';
+import { useDebounced, useLoad, useTitle } from '../../lib/hooks';
+import { formatDate, formatExact } from '../../lib/format';
+import { PageError } from '../../components/Chrome';
+import { Confirm } from '../../ui/Dialog';
+import { Button, Empty, Input, Marker, Note, Pagination, Skeleton, cx } from '../../ui/primitives';
+
+/**
+ * Accounts.
+ *
+ * There is very little to do here on purpose: an account exists so someone can
+ * keep their history, so the only moderation this product needs is suspending
+ * an account that is abusing the site, and deleting one on request.
+ */
 
 interface UserRow {
   id: string;
   email: string;
   username: string;
   displayName: string;
-  role: string;
+  role: 'USER' | 'ADMIN';
   status: string;
   verified: boolean;
   createdAt: string;
@@ -19,131 +28,158 @@ interface UserRow {
   savedCount: number;
 }
 
-/** User management (PRD §46). No passwords or tokens are ever shown. */
 export default function UsersAdmin() {
-  const { toast } = useToast();
-  const [search, setSearch] = useState('');
+  const [term, setTerm] = useState('');
   const [status, setStatus] = useState<'ACTIVE' | 'SUSPENDED'>('ACTIVE');
-  const debounced = useDebounced(search, 300);
-  const [confirm, setConfirm] = useState<{ user: UserRow; action: 'suspend' | 'unsuspend' | 'delete' } | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [page, setPage] = useState(1);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [pending, setPending] = useState<UserRow | null>(null);
+  const search = useDebounced(term, 250);
 
-  const query = new URLSearchParams({ status });
-  if (debounced) query.set('q', debounced);
-  const { data, loading, reload } = useFetch<{ items: UserRow[]; total: number }>(
-    `/admin/users?${query}`,
-    [debounced, status],
-  );
+  const { data, error, loading, reload } = useLoad<{
+    items: UserRow[];
+    total: number;
+    page: number;
+    totalPages: number;
+  }>(`/admin/users${query({ q: search, status, page: page > 1 ? page : undefined })}`);
 
-  const act = async () => {
-    if (!confirm) return;
-    setBusy(true);
+  useTitle('Users · Owner tools');
+
+  async function suspend(user: UserRow, suspended: boolean) {
+    setFailure(null);
     try {
-      if (confirm.action === 'delete') {
-        await api.del(`/admin/users/${confirm.user.id}`);
-        toast('User deleted.', 'success');
-      } else {
-        await api.post(`/admin/users/${confirm.user.id}/suspension`, {
-          suspended: confirm.action === 'suspend',
-        });
-        toast(confirm.action === 'suspend' ? 'User suspended.' : 'User restored.', 'success');
-      }
-      setConfirm(null);
+      await api.post(`/admin/users/${user.id}/suspension`, { suspended });
       reload();
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'That did not work.', 'error');
-    } finally {
-      setBusy(false);
+      setFailure(err instanceof ApiError ? err.message : 'That did not work.');
     }
-  };
+  }
+
+  async function remove() {
+    if (!pending) return;
+    setFailure(null);
+
+    try {
+      await api.delete(`/admin/users/${pending.id}`);
+      setPending(null);
+      reload();
+    } catch (err) {
+      setFailure(err instanceof ApiError ? err.message : 'That account could not be deleted.');
+      setPending(null);
+    }
+  }
+
+  if (error) return <PageError onRetry={reload} />;
 
   return (
-    <div className="flex flex-col gap-5">
-      <h1 className="text-[30px] leading-tight md:text-[34px]">Users</h1>
+    <>
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-[30px]">Users</h1>
+          <p className="mt-1.5 text-[13.5px] text-text-3">
+            {data ? `${formatExact(data.total)} ${status.toLowerCase()}` : 'Loading…'}
+          </p>
+        </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {(['ACTIVE', 'SUSPENDED'] as const).map((s) => (
-          <Button key={s} size="sm" variant={status === s ? 'primary' : 'quiet'} onClick={() => setStatus(s)}>
-            {s.charAt(0) + s.slice(1).toLowerCase()}
-          </Button>
-        ))}
-        <div className="relative ml-auto min-w-0 flex-1 sm:max-w-xs">
-          <Icon name="search" size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
-          <label htmlFor="user-search" className="sr-only">Search users</label>
-          <input
-            id="user-search"
+        <div className="w-full sm:w-64">
+          <label htmlFor="admin-user-search" className="sr-only">
+            Search users
+          </label>
+          <Input
+            id="admin-user-search"
             type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or email…"
-            className="w-full min-w-0 border-0 border-b border-rule-strong bg-transparent px-0 py-1.5 text-[14px] text-ink rounded-none transition-colors duration-fast hover:border-ink focus:border-blue focus:outline-none focus:ring-0 placeholder:text-ghost focus:border-blue focus:outline-none"
+            value={term}
+            onChange={(event) => {
+              setTerm(event.target.value);
+              setPage(1);
+            }}
+            placeholder="Search by name or email"
           />
         </div>
+      </header>
+
+      <div className="mb-5 flex items-center gap-5 border-y border-line py-3">
+        {(['ACTIVE', 'SUSPENDED'] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => {
+              setStatus(option);
+              setPage(1);
+            }}
+            className={cx(
+              'text-[13px] transition-colors duration-fast ease-out',
+              status === option ? 'text-accent' : 'text-text-3 hover:text-text',
+            )}
+          >
+            {option === 'ACTIVE' ? 'Active' : 'Suspended'}
+          </button>
+        ))}
       </div>
 
+      {failure ? (
+        <div className="mb-5">
+          <Note tone="critical">{failure}</Note>
+        </div>
+      ) : null}
+
       {loading && !data ? (
-        <Skeleton className="h-80" />
-      ) : !data || data.items.length === 0 ? (
-        <EmptyState icon="users" title="No users here" description={debounced ? 'Nothing matched that search.' : 'Registered users appear here.'} />
-      ) : (
-        <div className="border-t border-rule">
-          <ul>
-            {data.items.map((u) => (
-              <li key={u.id} className="flex flex-wrap items-center gap-3 border-b border-rule py-3.5">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-sunk text-[13px] font-bold uppercase text-blue">
-                  {u.displayName[0]}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-center gap-2 text-[14px] font-medium">
-                    {u.displayName}
-                    <span className="text-[12.5px] text-faint">@{u.username}</span>
-                    {u.role === 'ADMIN' ? <Marker tone="blue">Owner</Marker> : null}
-                    {!u.verified ? <Marker tone="warn">Unconfirmed</Marker> : null}
-                    {u.status === 'SUSPENDED' ? <Marker tone="stop">Suspended</Marker> : null}
+        <Skeleton className="h-64 w-full" />
+      ) : data && data.items.length ? (
+        <>
+          <ul className="flex flex-col">
+            {data.items.map((user) => (
+              <li
+                key={user.id}
+                className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line py-3 first:border-t"
+              >
+                <div className="min-w-0">
+                  <p className="flex items-center gap-3 text-[14px] text-text">
+                    {user.username}
+                    {user.role === 'ADMIN' ? <Marker tone="accent">Owner</Marker> : null}
+                    {user.verified ? null : <Marker tone="caution">Unconfirmed</Marker>}
                   </p>
-                  <p className="truncate text-[12px] text-faint">
-                    {u.email} · joined {formatDate(u.createdAt)} · {u.downloadCount} downloads · {u.savedCount} saved
-                  </p>
+                  <p className="font-mono text-[11.5px] text-text-4">{user.email}</p>
                 </div>
-                {u.role !== 'ADMIN' ? (
-                  <div className="flex shrink-0 gap-1.5">
+
+                <p className="ml-auto flex items-center gap-4 font-mono text-[11.5px] text-text-4">
+                  <span>{user.downloadCount} downloads</span>
+                  <span>{user.savedCount} saved</span>
+                  <span>joined {formatDate(user.createdAt)}</span>
+                </p>
+
+                {user.role === 'ADMIN' ? null : (
+                  <div className="flex gap-2">
                     <Button
                       size="sm"
-                      onClick={() => setConfirm({ user: u, action: u.status === 'SUSPENDED' ? 'unsuspend' : 'suspend' })}
+                      variant="quiet"
+                      onClick={() => suspend(user, user.status !== 'SUSPENDED')}
                     >
-                      {u.status === 'SUSPENDED' ? 'Restore' : 'Suspend'}
+                      {user.status === 'SUSPENDED' ? 'Restore' : 'Suspend'}
                     </Button>
-                    <Button size="sm" variant="quiet" icon="trash" onClick={() => setConfirm({ user: u, action: 'delete' })}>
+                    <Button size="sm" variant="quiet" onClick={() => setPending(user)}>
                       Delete
                     </Button>
                   </div>
-                ) : null}
+                )}
               </li>
             ))}
           </ul>
-        </div>
+
+          <Pagination page={data.page} totalPages={data.totalPages} onPage={setPage} />
+        </>
+      ) : (
+        <Empty icon="users" title="No accounts here" body="Nobody matches that filter." />
       )}
 
-      <ConfirmDialog
-        open={!!confirm}
-        onClose={() => setConfirm(null)}
-        onConfirm={act}
-        title={
-          confirm?.action === 'delete' ? `Delete ${confirm.user.displayName}?`
-          : confirm?.action === 'suspend' ? `Suspend ${confirm?.user.displayName}?`
-          : `Restore ${confirm?.user.displayName}?`
-        }
-        description={
-          confirm?.action === 'delete'
-            ? 'Their account, saved items and notifications are removed. Download counts stay accurate. This cannot be undone.'
-            : confirm?.action === 'suspend'
-              ? 'They are signed out immediately and cannot sign back in until restored.'
-              : 'They will be able to sign in again.'
-        }
-        confirmLabel={confirm?.action === 'delete' ? 'Delete' : confirm?.action === 'suspend' ? 'Suspend' : 'Restore'}
-        destructive={confirm?.action !== 'unsuspend'}
-        loading={busy}
+      <Confirm
+        open={!!pending}
+        onClose={() => setPending(null)}
+        onConfirm={remove}
+        title={`Delete ${pending?.username ?? 'this account'}?`}
+        body="Their history, saves and preferences go with it. Download counts stay accurate, because the events survive without a name attached."
+        confirmLabel="Delete account"
       />
-    </div>
+    </>
   );
 }

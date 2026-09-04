@@ -1,164 +1,185 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, ApiError, type Category } from '../../lib/api';
-import { useAuth } from '../../lib/auth';
-import { useFetch } from '../../lib/hooks';
-import { Button, Block, Skeleton, Toggle, useToast } from '../../components/ui';
-import { Icon } from '../../components/Icon';
+import { api, ApiError } from '../../lib/api';
+import { useLoad, useTitle } from '../../lib/hooks';
+import { useSession } from '../../lib/session';
+import type { Category, NotificationPreference } from '../../lib/types';
+import { PageError } from '../../components/Chrome';
+import { Button, Check, Note, Skeleton, Switch } from '../../ui/primitives';
 
-interface Preference {
-  enabled: boolean;
-  newResource: boolean;
-  resourceUpdates: boolean;
-  tutorials: boolean;
-  announcements: boolean;
-  emailEnabled: boolean;
-  categoryIds: string[];
-}
-
-/** Notification preferences (PRD §21). */
+/**
+ * What you hear about.
+ *
+ * Every switch here is off-by-choice, not off-by-accident: the defaults are
+ * the useful ones, and turning the top switch off silences everything without
+ * losing the finer settings underneath it. Email stays locked until the
+ * address is confirmed, because sending to an unconfirmed address is how a
+ * site ends up mailing someone who never asked for it.
+ */
 export default function Preferences() {
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const { data } = useFetch<{ preference: Preference }>('/me/preferences');
-  const { data: categories } = useFetch<{ items: Category[] }>('/categories');
+  const { emailVerified } = useSession();
+  const loaded = useLoad<{ preference: NotificationPreference }>('/me/preferences');
+  const categories = useLoad<{ items: Category[] }>('/categories');
 
-  const [pref, setPref] = useState<Preference | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [draft, setDraft] = useState<NotificationPreference | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [failure, setFailure] = useState<ApiError | null>(null);
+
+  useTitle('Preferences · Cyriq VFX');
 
   useEffect(() => {
-    if (data?.preference) setPref(data.preference);
-  }, [data]);
+    if (loaded.data) setDraft(loaded.data.preference);
+  }, [loaded.data]);
 
-  if (!pref) return <Skeleton className="h-64 w-full" />;
+  function edit(patch: Partial<NotificationPreference>) {
+    setDraft((current) => (current ? { ...current, ...patch } : current));
+    setSaved(false);
+  }
 
-  const set = <K extends keyof Preference>(key: K, value: Preference[K]) => {
-    setPref((p) => (p ? { ...p, [key]: value } : p));
-    setDirty(true);
-  };
+  async function save() {
+    if (!draft) return;
+    setSaving(true);
+    setFailure(null);
 
-  const toggleCategory = (id: string) => {
-    setPref((p) => {
-      if (!p) return p;
-      const has = p.categoryIds.includes(id);
-      return { ...p, categoryIds: has ? p.categoryIds.filter((c) => c !== id) : [...p.categoryIds, id] };
-    });
-    setDirty(true);
-  };
-
-  const save = async () => {
-    setBusy(true);
     try {
-      await api.patch('/me/preferences', pref);
-      toast('Preferences saved.', 'success');
-      setDirty(false);
+      const result = await api.patch<{ preference: NotificationPreference }>('/me/preferences', {
+        enabled: draft.enabled,
+        newResource: draft.newResource,
+        resourceUpdates: draft.resourceUpdates,
+        tutorials: draft.tutorials,
+        announcements: draft.announcements,
+        emailEnabled: draft.emailEnabled,
+        categoryIds: draft.categoryIds,
+      });
+      setDraft(result.preference);
+      setSaved(true);
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'That did not save.', 'error');
+      if (err instanceof ApiError) setFailure(err);
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
-  };
+  }
+
+  if (loaded.error) return <PageError onRetry={loaded.reload} />;
 
   return (
-    <div className="flex flex-col gap-10">
-      <Block title="Notifications" description="Choose what is worth telling you about.">
-        <div className="flex flex-col gap-5">
-          <Toggle
-            label="Notifications"
-            description="Turn everything off with one switch."
-            checked={pref.enabled}
-            onChange={(v) => set('enabled', v)}
+    <>
+      <header className="mb-7">
+        <h1 className="text-[30px]">Preferences</h1>
+        <p className="mt-1.5 text-[13.5px] text-text-3">
+          Choose what is worth telling you about. Nothing is on that you did not agree to.
+        </p>
+      </header>
+
+      {!draft ? (
+        <Skeleton className="h-64 w-full" />
+      ) : (
+        <div className="max-w-xl">
+          <Switch
+            label="Notify me at all"
+            description="The master switch. Off means nothing at all, in the site or by email."
+            checked={draft.enabled}
+            onChange={(next) => edit({ enabled: next })}
           />
 
-          <div className="flex flex-col gap-4 border-t border-rule pt-5">
-            <Toggle
+          <div className={draft.enabled ? undefined : 'opacity-50'}>
+            <Switch
               label="New resources"
               description="When something new is published."
-              checked={pref.newResource}
-              onChange={(v) => set('newResource', v)}
-              disabled={!pref.enabled}
+              checked={draft.newResource}
+              disabled={!draft.enabled}
+              onChange={(next) => edit({ newResource: next })}
             />
-            <Toggle
-              label="Updates to your downloads"
-              description="Only for resources you have actually downloaded."
-              checked={pref.resourceUpdates}
-              onChange={(v) => set('resourceUpdates', v)}
-              disabled={!pref.enabled}
+            <Switch
+              label="Updates to what I have downloaded"
+              description="When a resource you have taken gets a new version."
+              checked={draft.resourceUpdates}
+              disabled={!draft.enabled}
+              onChange={(next) => edit({ resourceUpdates: next })}
             />
-            <Toggle
+            <Switch
               label="New tutorials"
-              checked={pref.tutorials}
-              onChange={(v) => set('tutorials', v)}
-              disabled={!pref.enabled}
+              checked={draft.tutorials}
+              disabled={!draft.enabled}
+              onChange={(next) => edit({ tutorials: next })}
             />
-            <Toggle
+            <Switch
               label="Announcements"
-              description="Rare. Site news only."
-              checked={pref.announcements}
-              onChange={(v) => set('announcements', v)}
-              disabled={!pref.enabled}
+              description="Occasional notes from the creator."
+              checked={draft.announcements}
+              disabled={!draft.enabled}
+              onChange={(next) => edit({ announcements: next })}
+            />
+            <Switch
+              label="Email me as well"
+              description={
+                emailVerified
+                  ? 'Send the same notifications to your inbox.'
+                  : 'Confirm your email address first.'
+              }
+              checked={draft.emailEnabled}
+              disabled={!draft.enabled || !emailVerified}
+              onChange={(next) => edit({ emailEnabled: next })}
             />
           </div>
 
-          <div className="border-t border-rule pt-5">
-            <Toggle
-              label="Email me as well"
-              description={
-                user?.emailVerifiedAt
-                  ? 'Same notifications, delivered to your inbox.'
-                  : 'Confirm your email address first.'
-              }
-              checked={pref.emailEnabled}
-              onChange={(v) => set('emailEnabled', v)}
-              disabled={!pref.enabled || !user?.emailVerifiedAt}
-            />
-            {!user?.emailVerifiedAt ? (
-              <p className="mt-2 flex items-center gap-1.5 text-[12.5px] text-warn">
-                <Icon name="info" size={12} />
-                <Link to="/account/profile" className="hover:underline">Confirm your email</Link>
-                to enable this.
+          {!emailVerified ? (
+            <p className="mt-4 text-[12.5px] text-text-3">
+              Your email address is not confirmed yet.{' '}
+              <Link to="/account/profile" className="underlined">
+                Send a new confirmation
+              </Link>
+              .
+            </p>
+          ) : null}
+
+          {categories.data ? (
+            <section className="mt-10">
+              <h2 className="kicker mb-3 border-b border-line pb-2">
+                Only these categories, if you like
+              </h2>
+              <p className="mb-4 text-[12.5px] text-text-3">
+                Leave them all unchecked to hear about everything.
+              </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {categories.data.items.map((category) => (
+                  <Check
+                    key={category.id}
+                    checked={draft.categoryIds.includes(category.id)}
+                    disabled={!draft.enabled}
+                    onChange={(next) =>
+                      edit({
+                        categoryIds: next
+                          ? [...draft.categoryIds, category.id]
+                          : draft.categoryIds.filter((id) => id !== category.id),
+                      })
+                    }
+                    label={category.name}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {failure ? (
+            <div className="mt-6">
+              <Note tone="critical">{failure.message}</Note>
+            </div>
+          ) : null}
+
+          <div className="mt-8 flex items-center gap-4 border-t border-line pt-5">
+            <Button variant="primary" onClick={save} loading={saving}>
+              Save preferences
+            </Button>
+            {saved ? (
+              <p role="status" className="text-[13px] text-positive">
+                Preferences saved.
               </p>
             ) : null}
           </div>
         </div>
-      </Block>
-
-      {categories && categories.items.length > 0 ? (
-        <Block
-          title="Categories you care about"
-          description="Leave all unchecked to hear about everything."
-        >
-          <div className="flex flex-wrap gap-2">
-            {categories.items.map((c) => {
-              const active = pref.categoryIds.includes(c.id);
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => toggleCategory(c.id)}
-                  aria-pressed={active}
-                  disabled={!pref.enabled}
-                  className={
-                    'text-[14px] underline-offset-4 transition-colors duration-fast disabled:opacity-50 ' +
-                    (active
-                      ? 'text-blue underline decoration-blue'
-                      : 'text-faint hover:text-ink hover:underline')
-                  }
-                >
-                  {c.name}
-                </button>
-              );
-            })}
-          </div>
-        </Block>
-      ) : null}
-
-      <div className="flex items-center gap-3">
-        <Button variant="primary" onClick={save} loading={busy} disabled={!dirty}>
-          Save preferences
-        </Button>
-        {dirty ? <span className="text-[13px] text-faint">Unsaved changes</span> : null}
-      </div>
-    </div>
+      )}
+    </>
   );
 }

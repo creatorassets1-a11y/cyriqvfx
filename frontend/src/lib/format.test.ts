@@ -1,20 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import {
+  flagLabel,
   formatBytes,
   formatCount,
   formatDuration,
   formatRelative,
-  flagLabel,
   skillLabel,
 } from './format';
 
 /**
- * Formatting rules the interface depends on.
- *
- * These are the only pure functions in the frontend whose output a visitor
- * reads directly, so the edge cases are worth pinning: a count must never be
- * rounded up into a claim the database cannot support, and an absent value
- * must render as nothing rather than as a placeholder glyph.
+ * These are the only pure functions whose output a visitor reads directly, so
+ * their edge cases are worth pinning down: a count must never be rounded into
+ * a claim the database cannot support, and a missing value must come out as
+ * nothing rather than as a zero someone could mistake for real data.
  */
 
 describe('formatCount', () => {
@@ -24,7 +22,7 @@ describe('formatCount', () => {
     expect(formatCount(999)).toBe('999');
   });
 
-  it('abbreviates thousands without inflating them', () => {
+  it('abbreviates without inflating', () => {
     expect(formatCount(1000)).toBe('1k');
     expect(formatCount(1240)).toBe('1.2k');
     expect(formatCount(12_400)).toBe('12k');
@@ -64,8 +62,9 @@ describe('formatDuration', () => {
 });
 
 describe('formatRelative', () => {
+  const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+
   it('describes recent moments in the units a person would use', () => {
-    const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
     expect(formatRelative(ago(10_000))).toBe('just now');
     expect(formatRelative(ago(5 * 60_000))).toBe('5m ago');
     expect(formatRelative(ago(3 * 3_600_000))).toBe('3h ago');
@@ -73,9 +72,9 @@ describe('formatRelative', () => {
   });
 
   it('falls back to a date once relative time stops helping', () => {
-    const longAgo = new Date(Date.now() - 200 * 86_400_000).toISOString();
-    expect(formatRelative(longAgo)).not.toMatch(/ago/);
-    expect(formatRelative(longAgo)).not.toBe('');
+    const long = ago(200 * 86_400_000);
+    expect(formatRelative(long)).not.toMatch(/ago/);
+    expect(formatRelative(long)).not.toBe('');
   });
 
   it('renders nothing when there is no timestamp', () => {

@@ -1,33 +1,40 @@
 import { Link } from 'react-router-dom';
-import { LinkButton } from '../components/ui';
 import { useTitle } from '../lib/hooks';
+import { ButtonLink } from '../ui/primitives';
 
-/** Branded not-found with real ways out (PRD §52). */
+/**
+ * The 404. The server already returned the right status for this URL; what is
+ * left is to say so in the site's own voice and hand back the two routes that
+ * actually recover the visit.
+ */
 export default function NotFound() {
   useTitle('Not found · Cyriq VFX');
 
   return (
-    <div className="page py-20 md:py-32">
-      <div className="max-w-xl">
-        <p className="eyebrow">Error 404</p>
-        <h1 className="mt-3 text-[44px] leading-[1.02] md:text-[64px]">This one got cut</h1>
-        <p className="copy mt-5 text-[17px]">
-          That page does not exist, or it was moved. The library is still here, though.
-        </p>
+    <div className="page flex min-h-[60vh] flex-col items-center justify-center py-20 text-center">
+      <p className="kicker">404</p>
+      <h1 className="mt-3 text-[34px] md:text-[44px]">This one got cut</h1>
+      <p className="prose mt-4 text-center">
+        That page is not here. It may have been renamed, or the link may have lost a character on
+        its way to you.
+      </p>
 
-        <div className="mt-9 flex flex-wrap items-center gap-x-7 gap-y-3">
-          <LinkButton to="/resources" variant="primary" size="lg" iconRight="arrow-right">
-            Browse resources
-          </LinkButton>
-          <Link to="/" className="link text-[15px] font-medium">
-            Go home
-          </Link>
-        </div>
-
-        <p className="mt-10 border-t border-rule pt-5 text-[13px] text-faint">
-          Looking for something specific? Try the search in the header.
-        </p>
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <ButtonLink to="/resources" variant="primary" size="lg">
+          Browse resources
+        </ButtonLink>
+        <ButtonLink to="/" size="lg">
+          Go to the front page
+        </ButtonLink>
       </div>
+
+      <p className="mt-8 text-[13px] text-text-3">
+        Looking for something specific?{' '}
+        <Link to="/requests" className="underlined">
+          Ask for it
+        </Link>
+        .
+      </p>
     </div>
   );
 }

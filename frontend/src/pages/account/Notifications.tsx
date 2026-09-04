@@ -1,124 +1,119 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type NotificationItem } from '../../lib/api';
-import { useAuth } from '../../lib/auth';
-import { useFetch } from '../../lib/hooks';
-import { Button, cx, EmptyState, LinkButton, Skeleton } from '../../components/ui';
-import { Icon, type IconName } from '../../components/Icon';
+import { api, ApiError } from '../../lib/api';
+import { useLoad, useTitle } from '../../lib/hooks';
+import { useSession } from '../../lib/session';
+import type { Notification, Paged } from '../../lib/types';
 import { formatRelative } from '../../lib/format';
+import { PageError } from '../../components/Chrome';
+import { Button, ButtonLink, Empty, Marker, cx } from '../../ui/primitives';
+import { useToast } from '../../ui/Toast';
 
-const TYPE_ICON: Record<NotificationItem['type'], IconName> = {
-  NEW_RESOURCE: 'sparkles',
-  RESOURCE_UPDATED: 'refresh',
-  TUTORIAL_PUBLISHED: 'play',
-  ANNOUNCEMENT: 'info',
-};
+/**
+ * Notifications.
+ *
+ * Only what the owner published and what changed in something already taken.
+ * Opening one marks it read; there is no other state to manage here.
+ */
 
-/** Notification centre (PRD §21). */
+const KIND: Record<Notification['type'], { label: string; tone: 'accent' | 'positive' | 'neutral' }> =
+  {
+    NEW_RESOURCE: { label: 'New', tone: 'accent' },
+    RESOURCE_UPDATED: { label: 'Updated', tone: 'positive' },
+    TUTORIAL_PUBLISHED: { label: 'Tutorial', tone: 'neutral' },
+    ANNOUNCEMENT: { label: 'Announcement', tone: 'neutral' },
+  };
+
 export default function Notifications() {
-  const { setUnread } = useAuth();
+  const { setUnread } = useSession();
+  const { toast } = useToast();
   const [unreadOnly, setUnreadOnly] = useState(false);
-  const [page, setPage] = useState(1);
 
-  const query = new URLSearchParams({ page: String(page), perPage: '20' });
-  if (unreadOnly) query.set('unreadOnly', 'true');
-  const { data, loading, reload } = useFetch<{
-    items: NotificationItem[];
-    unread: number;
-    total: number;
-    hasMore: boolean;
-  }>(`/me/notifications?${query}`, [unreadOnly, page]);
+  const { data, error, loading, reload, set } = useLoad<Paged<Notification> & { unread: number }>(
+    `/me/notifications${unreadOnly ? '?unreadOnly=true' : ''}`,
+  );
 
-  const markAll = async () => {
-    await api.post('/me/notifications/read-all').catch(() => {});
-    setUnread(0);
-    reload();
-  };
+  useTitle('Notifications · Cyriq VFX');
 
-  const open = async (n: NotificationItem) => {
-    if (n.read) return;
-    await api.post(`/me/notifications/${n.id}/read`).catch(() => {});
-    setUnread(Math.max(0, (data?.unread ?? 1) - 1));
-  };
+  async function markOne(item: Notification) {
+    if (item.read || !data) return;
+    set({
+      ...data,
+      items: data.items.map((row) => (row.id === item.id ? { ...row, read: true } : row)),
+    });
+    const result = await api
+      .post<{ unread: number }>(`/me/notifications/${item.id}/read`)
+      .catch(() => null);
+    if (result) setUnread(result.unread);
+  }
 
-  if (loading && !data) return <Skeleton className="h-64 w-full" />;
+  async function markAll() {
+    try {
+      await api.post('/me/notifications/read-all');
+      setUnread(0);
+      reload();
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'That did not work.', 'error');
+    }
+  }
+
+  if (error) return <PageError onRetry={reload} />;
 
   return (
-    <div>
-      <div className="mb-7 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b border-ink pb-3">
-        <h2 className="text-[26px] md:text-[30px]">Notifications</h2>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant={unreadOnly ? 'primary' : 'quiet'}
-            onClick={() => { setUnreadOnly((v) => !v); setPage(1); }}
-            aria-pressed={unreadOnly}
-          >
-            Unread only
-          </Button>
-          {(data?.unread ?? 0) > 0 ? (
-            <Button size="sm" icon="check" onClick={markAll}>Mark all read</Button>
-          ) : null}
+    <>
+      <header className="mb-7 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-[30px]">Notifications</h1>
+          <p className="mt-1.5 text-[13.5px] text-text-3">
+            New resources, updates to what you have taken, and anything the owner announces.
+          </p>
         </div>
-      </div>
 
-      {!data || data.items.length === 0 ? (
-        <EmptyState
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={() => setUnreadOnly((value) => !value)}>
+            {unreadOnly ? 'Show all' : 'Unread only'}
+          </Button>
+          <Button size="sm" onClick={markAll}>
+            Mark all read
+          </Button>
+        </div>
+      </header>
+
+      {loading && !data ? null : data && data.items.length ? (
+        <ul className="flex flex-col">
+          {data.items.map((item) => (
+            <li
+              key={item.id}
+              className={cx(
+                'border-b border-line first:border-t',
+                !item.read && 'border-l-2 border-l-accent pl-4',
+              )}
+            >
+              <Link to={item.link} onClick={() => markOne(item)} className="group block py-4">
+                <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                  <Marker tone={KIND[item.type]?.tone ?? 'neutral'}>
+                    {KIND[item.type]?.label ?? 'Update'}
+                  </Marker>
+                  <span className="ml-auto font-mono text-[11.5px] text-text-4">
+                    {formatRelative(item.createdAt)}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-[15px] text-text group-hover:text-accent">{item.title}</p>
+                <p className="mt-1 text-[13.5px] leading-relaxed text-text-2">{item.body}</p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <Empty
           icon="bell"
           title={unreadOnly ? 'Nothing unread' : 'No notifications yet'}
-          description={
-            unreadOnly
-              ? 'You are all caught up.'
-              : 'You will hear about new resources, updates to things you downloaded, and new tutorials.'
-          }
+          body="You will hear when something you have downloaded is updated, or when something new lands in a category you follow."
           action={
-            <LinkButton to="/account/preferences">Choose what you hear about</LinkButton>
+            <ButtonLink to="/account/preferences">Choose what you hear about</ButtonLink>
           }
         />
-      ) : (
-        <>
-          <ul className="flex flex-col">
-            {data.items.map((n) => (
-              <li key={n.id} className="border-b border-rule first:border-t">
-                <Link
-                  to={n.link}
-                  onClick={() => open(n)}
-                  className={cx(
-                    'flex gap-4 py-4 transition-colors duration-fast',
-                    !n.read && 'border-l-2 border-blue pl-4',
-                  )}
-                >
-                  <Icon
-                    name={TYPE_ICON[n.type]}
-                    size={17}
-                    className={cx('mt-0.5 shrink-0', n.read ? 'text-ghost' : 'text-blue')}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[15px] font-medium leading-snug text-ink">
-                      {n.title}
-                    </span>
-                    <span className="mt-1 block text-[13.5px] leading-relaxed text-soft">
-                      {n.body}
-                    </span>
-                    <span className="mt-2 block font-mono text-[11.5px] text-ghost">
-                      {formatRelative(n.createdAt)}
-                    </span>
-                  </span>
-                  {!n.read ? (
-                    <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-blue" aria-label="Unread" />
-                  ) : null}
-                </Link>
-              </li>
-            ))}
-          </ul>
-
-          {data.hasMore ? (
-            <div className="mt-8 flex justify-center border-t border-rule pt-6">
-              <Button onClick={() => setPage((p) => p + 1)} loading={loading}>Load more</Button>
-            </div>
-          ) : null}
-        </>
       )}
-    </div>
+    </>
   );
 }

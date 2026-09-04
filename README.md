@@ -26,9 +26,10 @@ cyriqvfx/
 │       └── jobs/     scheduled publishing and cleanup
 ├── frontend/         React + TypeScript + Vite + Tailwind
 │   └── src/
-│       ├── components/ design-system primitives and feature components
+│       ├── ui/       design-system primitives: buttons, fields, dialogs, menus
+│       ├── components/ site chrome, cards, previews, download and upload
 │       ├── pages/    public, account and admin routes (code-split)
-│       ├── lib/      API client, auth context, hooks, formatting
+│       ├── lib/      API client, typed API surface, session, hooks, formatting
 │       └── styles/   design and motion tokens
 ├── e2e/              Playwright: public, account, admin, failure, performance
 └── docs/             architecture, deployment, security, decisions
@@ -94,8 +95,8 @@ are set in a serif at large sizes; the interface, numbers and metadata sit in
 the platform UI and monospace faces. Structure comes from hairlines, alignment
 and space: lists are ruled rows, sections sit under a rule, and long-form copy
 is held to a readable measure. Content is not wrapped in a card unless the
-container does something, which in practice means only the three popovers, the
-overlays and the upload drop target.
+container does something, which in practice means the download panel, the
+popovers and overlays, and the upload drop target.
 
 Tokens live in [frontend/src/styles/tokens.css](frontend/src/styles/tokens.css)
 and are exposed to Tailwind by name, so a colour, radius or duration is changed
@@ -133,12 +134,12 @@ connection:
 
 | Metric | Budget | Measured |
 | --- | --- | --- |
-| Initial JavaScript | ≤ 260 KB | 226 KB |
-| Initial CSS | ≤ 60 KB | 41 KB |
-| Largest Contentful Paint | < 3000 ms | ~880 ms |
+| Initial JavaScript | ≤ 260 KB | 209 KB |
+| Initial CSS | ≤ 60 KB | 28 KB |
+| Largest Contentful Paint | < 3000 ms | ~590 ms |
 | Cumulative Layout Shift | < 0.05 | 0.000 |
 | Longest blocking task | < 250 ms | 0 ms |
-| Search round trip | < 4000 ms | ~140 ms |
+| Search round trip | < 4000 ms | ~105 ms |
 
 No webfont is loaded. The display face is a system serif and the interface face
 is the platform UI stack, so the first paint is never blocked on a font and

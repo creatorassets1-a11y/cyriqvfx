@@ -1,137 +1,94 @@
 import { Link } from 'react-router-dom';
-import { useAuth } from '../lib/auth';
-import { useFetch, useTitle } from '../lib/hooks';
-import { LinkButton, Skeleton } from '../components/ui';
-import { Icon } from '../components/Icon';
+import { useLoad } from '../lib/hooks';
+import { useSession } from '../lib/session';
+import type { HomePayload } from '../lib/types';
 import { formatCount } from '../lib/format';
+import { Brand } from '../components/Brand';
+import { ButtonLink } from '../ui/primitives';
 
+/**
+ * About.
+ *
+ * The owner writes this page in the CMS, so everything here except the shape
+ * of it comes from the database. The numbers underneath are the real ones the
+ * catalogue reports, not a claim typed into a settings field.
+ */
 export default function About() {
-  const { settings } = useAuth();
-  useTitle('About · Cyriq VFX');
-
-  const { data } = useFetch<{ stats: { resourceCount: number; downloadCount: number } }>(
-    '/resources/home',
-  );
-
-  if (!settings) {
-    return (
-      <div className="page py-16">
-        <Skeleton className="mb-5 h-12 w-64" />
-        <Skeleton className="h-40 w-full max-w-2xl" />
-      </div>
-    );
-  }
-
-  const social = Object.entries(settings.social).filter(([, href]) => href) as Array<[string, string]>;
+  const { settings } = useSession();
+  const { data } = useLoad<HomePayload>('/resources/home');
 
   return (
-    <div className="page py-10 md:py-16">
-      <div className="max-w-3xl border-b border-ink pb-6">
-        <p className="eyebrow">About</p>
-        <h1 className="mt-3 text-[40px] leading-[1.04] md:text-[56px]">{settings.aboutTitle}</h1>
-        <p className="copy mt-6 text-[17px]">{settings.aboutBody}</p>
-      </div>
+    <div className="page py-12 md:py-20">
+      <div className="max-w-2xl">
+        <Brand name={settings?.siteName ?? 'Cyriq VFX'} as="plain" size={40} />
 
-      <div className="mt-12 grid gap-x-10 gap-y-8 sm:grid-cols-3">
-        <Principle
-          icon="download"
-          title="No signup to download"
-          body="Every file downloads without an account. An account only adds history, saved items and update alerts."
-        />
-        <Principle
-          icon="shield"
-          title="Licenses in plain language"
-          body="Each resource states exactly what you can do with it: personal use, commercial use, modification, credit."
-        />
-        <Principle
-          icon="check"
-          title="Honest compatibility"
-          body="Version ranges come from actual testing. If something is untested, it says so rather than guessing."
-        />
-      </div>
+        <h1 className="mt-6 text-[34px] md:text-[46px]">
+          {settings?.aboutTitle ?? 'About this library'}
+        </h1>
 
-      {data && data.stats.resourceCount > 0 ? (
-        <div className="mt-14 flex flex-wrap gap-x-16 gap-y-6 border-y border-rule py-8">
-          <Stat label="Resources" value={String(data.stats.resourceCount)} />
-          {data.stats.downloadCount > 0 ? (
-            <Stat label="Downloads" value={formatCount(data.stats.downloadCount)} />
-          ) : null}
-        </div>
-      ) : null}
-
-      <section className="mt-14 max-w-2xl">
-        <h2 className="border-b border-rule pb-3 text-[24px] md:text-[28px]">A note on the files</h2>
-        <p className="copy mt-4">
-          Scripts, extensions and project files are ordinary files that your editing software runs.
-          Read the included README before installing anything, and only install tools from sources
-          you trust, including this one. Nothing here is executed on the server; files are stored
-          and served exactly as uploaded.
-        </p>
-      </section>
-
-      <section className="mt-14 max-w-2xl">
-        <h2 className="border-b border-rule pb-3 text-[24px] md:text-[28px]">Get in touch</h2>
-        <p className="copy mt-4">
-          Found something broken, or want a resource that does not exist yet? Both are useful to
-          know about.
-        </p>
-        <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3">
-          <LinkButton to="/requests" variant="primary" iconRight="arrow-right">
-            Request a resource
-          </LinkButton>
-          <Link to="/report" className="link text-[14.5px]">
-            Report a problem
-          </Link>
-          {settings.contactEmail ? (
-            <a href={`mailto:${settings.contactEmail}`} className="link text-[14.5px]">
-              Email
-            </a>
-          ) : null}
+        <div className="prose mt-6 whitespace-pre-line text-[17px]">
+          {settings?.aboutBody ??
+            'A personal library of free editing resources, published by one editor for other editors.'}
         </div>
 
-        {social.length > 0 ? (
-          <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-rule pt-5">
-            {social.map(([name, href]) => (
-              <a
-                key={name}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer me"
-                className="link text-[13.5px] capitalize"
-              >
-                {name}
-              </a>
-            ))}
-          </div>
+        {data ? (
+          <dl className="mt-10 flex flex-wrap gap-x-12 gap-y-5 border-y border-line py-6">
+            <div>
+              <dt className="kicker">Resources published</dt>
+              <dd className="mt-1 font-mono text-[24px]">{formatCount(data.stats.resourceCount)}</dd>
+            </div>
+            <div>
+              <dt className="kicker">Downloads served</dt>
+              <dd className="mt-1 font-mono text-[24px]">{formatCount(data.stats.downloadCount)}</dd>
+            </div>
+            <div>
+              <dt className="kicker">Cost to you</dt>
+              <dd className="mt-1 font-mono text-[24px]">Nothing</dd>
+            </div>
+          </dl>
         ) : null}
-      </section>
-    </div>
-  );
-}
 
-function Principle({
-  icon,
-  title,
-  body,
-}: {
-  icon: 'download' | 'shield' | 'check';
-  title: string;
-  body: string;
-}) {
-  return (
-    <div className="min-w-0 border-t border-rule pt-5">
-      <Icon name={icon} size={18} className="text-blue" />
-      <h2 className="mt-3 font-display text-[19px] leading-snug">{title}</h2>
-      <p className="mt-2 text-[14px] leading-relaxed text-soft">{body}</p>
-    </div>
-  );
-}
+        <section className="mt-12">
+          <h2 className="text-[24px]">How the licensing works</h2>
+          <p className="prose mt-3">
+            Every resource carries its own license, shown on its page before you download it. Most
+            are free for commercial work; a few ask for credit. Nothing here needs an account, a
+            subscription or an email address.
+          </p>
+        </section>
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="font-display text-[40px] leading-none">{value}</p>
-      <p className="eyebrow mt-2.5">{label}</p>
+        <section className="mt-10">
+          <h2 className="text-[24px]">Get in touch</h2>
+          <p className="prose mt-3">
+            Missing something you need?{' '}
+            <Link to="/requests" className="underlined">
+              Request a resource
+            </Link>
+            . Found a file that is broken or mislabelled?{' '}
+            <Link to="/report" className="underlined">
+              Report it
+            </Link>
+            {settings?.contactEmail ? (
+              <>
+                , or email{' '}
+                <a href={`mailto:${settings.contactEmail}`} className="underlined">
+                  {settings.contactEmail}
+                </a>
+              </>
+            ) : null}
+            .
+          </p>
+        </section>
+
+        <div className="mt-12 flex flex-wrap gap-3">
+          <ButtonLink to="/resources" variant="primary" size="lg">
+            Browse the library
+          </ButtonLink>
+          <ButtonLink to="/tutorials" size="lg">
+            Watch a tutorial
+          </ButtonLink>
+        </div>
+      </div>
     </div>
   );
 }

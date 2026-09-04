@@ -1,94 +1,87 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
-import { useAuth } from '../lib/auth';
-import { Button, cx, useToast } from './ui';
-import { Icon } from './Icon';
+import { useSession } from '../lib/session';
+import { Icon } from '../ui/Icon';
+import { Button, cx } from '../ui/primitives';
+import { useToast } from '../ui/Toast';
 
 /**
- * Save / unsave (PRD §20). Optimistic, because the request is tiny and the
- * failure path simply puts the state back and says so.
+ * Saving a resource for later.
+ *
+ * Saving is the one thing on a resource page that needs an account, so a guest
+ * who presses it is sent to sign in with their way back remembered, rather
+ * than being told no. The state flips immediately and rolls back if the
+ * request fails, because a control that lies is worse than a slow one.
  */
+
 export function SaveButton({
   resourceId,
-  initialSaved = false,
+  title,
+  saved: initial,
   compact,
   onChange,
 }: {
   resourceId: string;
-  initialSaved?: boolean;
+  title: string;
+  saved: boolean;
+  /** Icon-only, for a corner of a card. It names the resource it saves. */
   compact?: boolean;
   onChange?: (saved: boolean) => void;
 }) {
-  const { user } = useAuth();
+  const { user } = useSession();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [saved, setSaved] = useState(initialSaved);
+  const [saved, setSaved] = useState(initial);
   const [busy, setBusy] = useState(false);
 
-  const toggle = useCallback(async () => {
+  async function toggle() {
     if (!user) {
-      toast('Sign in to save resources.', 'info', {
-        label: 'Sign in',
-        onClick: () => navigate('/login'),
-      });
+      navigate('/login', { state: { from: window.location.pathname } });
       return;
     }
-    if (busy) return;
 
     const next = !saved;
     setSaved(next);
     setBusy(true);
-    onChange?.(next);
 
     try {
       if (next) await api.put(`/me/saved/${resourceId}`);
-      else await api.del(`/me/saved/${resourceId}`);
+      else await api.delete(`/me/saved/${resourceId}`);
+      onChange?.(next);
     } catch (err) {
       setSaved(!next);
-      onChange?.(!next);
-      toast(
-        err instanceof ApiError ? err.message : 'That did not save. Try again.',
-        'error',
-      );
+      toast(err instanceof ApiError ? err.message : 'That could not be saved.', 'error');
     } finally {
       setBusy(false);
     }
-  }, [user, busy, saved, resourceId, toast, navigate, onChange]);
+  }
 
   if (compact) {
     return (
-      // Sitting on top of a still, so it is a glyph with a shadow rather than
-      // a control with a box around it.
       <button
         type="button"
-        aria-label={saved ? 'Remove from saved' : 'Save this resource'}
-        title={saved ? 'Remove from saved' : 'Save this resource'}
+        onClick={toggle}
+        disabled={busy}
+        aria-label={saved ? `Remove ${title} from saved` : `Save ${title}`}
         aria-pressed={saved}
-        onClick={(e) => {
-          // The entry is a stretched link; this must not navigate.
-          e.preventDefault();
-          e.stopPropagation();
-          void toggle();
-        }}
         className={cx(
-          'grid h-8 w-8 place-items-center drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]',
-          'transition-transform duration-fast ease-spring active:scale-90',
-          saved ? 'text-blue-light' : 'text-white hover:text-blue-light',
+          'flex h-8 w-8 items-center justify-center rounded-full border bg-ground/80 backdrop-blur transition-colors duration-fast ease-out',
+          saved ? 'border-accent text-accent' : 'border-line-strong text-text-2 hover:text-text',
         )}
       >
-        <Icon name={saved ? 'bookmark-filled' : 'bookmark'} size={17} />
+        <Icon name="bookmark" size={15} />
       </button>
     );
   }
 
   return (
     <Button
-      variant="secondary"
-      icon={saved ? 'bookmark-filled' : 'bookmark'}
       onClick={toggle}
+      disabled={busy}
       aria-pressed={saved}
-      className={saved ? 'border-blue text-blue' : undefined}
+      icon="bookmark"
+      className={cx(saved && 'border-accent text-accent')}
     >
       {saved ? 'Saved' : 'Save'}
     </Button>
