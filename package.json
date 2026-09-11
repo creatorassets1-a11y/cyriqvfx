@@ -1,36 +1,9 @@
 {
   "name": "cyriqvfx",
   "private": true,
-  "type": "module",
-  "version": "1.0.0",
-  "description": "Creator resource platform for video editors",
-  "workspaces": [
-    "backend",
-    "frontend"
-  ],
-  "engines": {
-    "node": ">=20.11"
-  },
-  "scripts": {
-    "dev": "npm-run-all --parallel dev:backend dev:frontend",
-    "dev:backend": "npm run dev --workspace backend",
-    "dev:frontend": "npm run dev --workspace frontend",
-    "build": "npm run build --workspace backend && npm run build --workspace frontend",
-    "typecheck": "npm run typecheck --workspace backend && npm run typecheck --workspace frontend",
-    "lint": "eslint .",
-    "test": "npm run test --workspace backend && npm run test --workspace frontend",
-    "test:e2e": "playwright test",
-    "db:migrate": "npm run db:migrate --workspace backend",
-    "db:seed": "npm run db:seed --workspace backend",
-    "start": "npm run start --workspace backend"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.17.0",
-    "@playwright/test": "^1.49.1",
-    "eslint": "^9.17.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "npm-run-all": "^4.1.5",
-    "typescript": "^5.7.2",
-    "typescript-eslint": "^8.19.0"
-  }
+  "version": "2.0.0",
+  "description": "Cyriq VFX — free resources for video editors",
+  "scripts": {"dev":"next dev","build":"next build","start":"next start","lint":"next lint"},
+  "dependencies": {"next":"latest","react":"latest","react-dom":"latest","lucide-react":"latest"},
+  "devDependencies": {"typescript":"latest","@types/node":"latest","@types/react":"latest","@types/react-dom":"latest","tailwindcss":"latest","@tailwindcss/postcss":"latest"}
 }
