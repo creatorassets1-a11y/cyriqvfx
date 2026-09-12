@@ -1,9 +1,0 @@
-{
-  "name": "cyriqvfx",
-  "private": true,
-  "version": "2.0.0",
-  "description": "Cyriq VFX — free resources for video editors",
-  "scripts": {"dev":"next dev","build":"next build","start":"next start","lint":"next lint"},
-  "dependencies": {"next":"latest","react":"latest","react-dom":"latest","lucide-react":"latest"},
-  "devDependencies": {"typescript":"latest","@types/node":"latest","@types/react":"latest","@types/react-dom":"latest","tailwindcss":"latest","@tailwindcss/postcss":"latest"}
-}

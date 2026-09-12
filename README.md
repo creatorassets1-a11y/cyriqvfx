@@ -1,15 +1,17 @@
 # Cyriq VFX
 
-A free, mobile-first resource hub for video editors. The repository has been reset to a new Next.js foundation and is ready for the production storage/auth wiring.
+Production-oriented creator resource library. Guests can browse and download files without accounts. The owner manages publishing through Creator Studio.
 
-## Routes
-- `/` — landing page
-- `/resources` — library
-- `/categories` — category browser
-- `/admin/login` — creator login
-- `/admin` — creator studio
+## Stack
 
-## Setup
-Requires Node 20+. Run `npm install` then `npm run dev`.
+Next.js App Router, Supabase Auth/Postgres, Cloudflare R2 private object storage, signed uploads/downloads, and Vercel.
 
-Production integrations are intentionally environment-driven: Supabase for auth/database and Cloudflare R2 for large assets. Never commit credentials.
+## Production setup
+
+1. Run `supabase/schema.sql` in the production Supabase database.
+2. Create an R2 bucket and S3 API token with object read/write access restricted to that bucket.
+3. Configure the environment variables in `.env.example` in Vercel.
+4. Create the owner account in Supabase Auth using the exact `ADMIN_EMAIL` address, then set its password securely.
+5. Point your domain to the Vercel project.
+
+The application never exposes R2 credentials to browsers. Uploads use short-lived presigned PUT URLs; downloads use short-lived presigned GET URLs. Supabase server-side auth uses cookie sessions. RLS protects user-facing database access, while the server-side service-role client is only used after the owner email has been verified.
